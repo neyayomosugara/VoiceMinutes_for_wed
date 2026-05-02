@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoiceMinutes — 音声議事録</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne+Mono&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #050810;
+    --bg2: #0b0f1e;
+    --panel: rgba(12,17,35,0.85);
+    --border: rgba(0,210,255,0.12);
+    --border-hot: rgba(0,210,255,0.45);
+    --cyan: #00d4ff;
+    --cyan-dim: rgba(0,212,255,0.15);
+    --red: #ff3366;
+    --green: #06d6a0;
+    --yellow: #ffd166;
+    --purple: #7b2fff;
+    --text: #e8f0ff;
+    --text2: #6b7a99;
+    --text3: #2d3654;
+    --mono: 'Syne Mono', monospace;
+    --sans: 'Noto Sans JP', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow-x: hidden;
+  }
+
+  /* ── Noise texture overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0;
+  }
+
+  /* ── Grid background ── */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none; z-index: 0;
+  }
+
+  .app {
+    position: relative; z-index: 1;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 20px 60px;
+    min-height: 100vh;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 0 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    font-family: var(--mono);
+    font-size: 1.25rem;
+    color: var(--cyan);
+    letter-spacing: 0.08em;
+  }
+  .logo span { color: var(--text2); }
+  .status-pill {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    display: flex; align-items: center; gap: 6px;
+    transition: all 0.3s;
+  }
+  .status-pill.listening { border-color: var(--red); color: var(--red); }
+  .status-pill.listening .dot { background: var(--red); animation: blink 1s infinite; }
+  .status-pill.processing { border-color: var(--yellow); color: var(--yellow); }
+  .status-pill .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text3);
+    transition: all 0.3s;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* ── Waveform Canvas ── */
+  .waveform-wrap {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0;
+    overflow: hidden;
+    backdrop-filter: blur(12px);
+    position: relative;
+  }
+  .waveform-wrap canvas {
+    display: block;
+    width: 100%; height: 80px;
+  }
+  .waveform-label {
+    position: absolute; top: 8px; left: 14px;
+    font-family: var(--mono); font-size: 0.65rem;
+    color: var(--text3); letter-spacing: 0.1em;
+  }
+
+  /* ── Main layout ── */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media(max-width:680px) { .main-grid { grid-template-columns: 1fr; } }
+
+  /* ── Panel ── */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    backdrop-filter: blur(12px);
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--cyan);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel-title::after {
+    content: ''; flex: 1;
+    height: 1px; background: var(--border);
+  }
+
+  /* ── Transcript area ── */
+  .transcript-box {
+    flex: 1;
+    min-height: 200px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: 0.92rem;
+    line-height: 1.8;
+    color: var(--text);
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .transcript-box:empty::before {
+    content: '録音を開始すると、ここに日本語でリアルタイム表示されます...';
+    color: var(--text3);
+    font-style: italic;
+  }
+  .partial-text { color: var(--cyan); font-style: italic; opacity: 0.7; }
+
+  /* ── Minutes area ── */
+  .minutes-box {
+    flex: 1;
+    min-height: 200px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    line-height: 1.9;
+    color: var(--text);
+    white-space: pre-wrap;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .minutes-box:empty::before {
+    content: '議事録を生成するとここに表示されます...';
+    color: var(--text3);
+    font-style: italic;
+    font-family: var(--sans);
+  }
+
+  /* ── Controls ── */
+  .controls {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  }
+
+  /* ── Buttons ── */
+  .btn {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex; align-items: center; gap: 8px;
+    white-space: nowrap;
+  }
+  .btn:active { transform: scale(0.97); }
+
+  .btn-record {
+    background: rgba(255,51,102,0.12);
+    border-color: var(--red);
+    color: var(--red);
+    flex: 1; justify-content: center;
+    font-size: 0.9rem; padding: 14px;
+  }
+  .btn-record:hover { background: rgba(255,51,102,0.22); }
+  .btn-record.active {
+    background: rgba(255,51,102,0.25);
+    box-shadow: 0 0 20px rgba(255,51,102,0.3);
+    animation: pulse-red 2s infinite;
+  }
+  @keyframes pulse-red {
+    0%,100%{ box-shadow: 0 0 20px rgba(255,51,102,0.3); }
+    50%{ box-shadow: 0 0 35px rgba(255,51,102,0.5); }
+  }
+
+  .btn-generate {
+    background: rgba(123,47,255,0.12);
+    border-color: var(--purple);
+    color: #b57fff;
+    flex: 1; justify-content: center;
+    font-size: 0.9rem; padding: 14px;
+  }
+  .btn-generate:hover { background: rgba(123,47,255,0.22); }
+  .btn-generate:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .btn-sm {
+    background: rgba(255,255,255,0.04);
+    border-color: var(--border);
+    color: var(--text2);
+    padding: 7px 14px;
+    font-size: 0.72rem;
+  }
+  .btn-sm:hover { border-color: var(--border-hot); color: var(--text); background: rgba(0,212,255,0.06); }
+
+  .btn-save {
+    border-color: rgba(6,214,160,0.4);
+    color: var(--green);
+    background: rgba(6,214,160,0.06);
+  }
+  .btn-save:hover { background: rgba(6,214,160,0.14); }
+
+  /* ── Mode toggle ── */
+  .mode-toggle {
+    display: flex; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  .mode-btn {
+    font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em;
+    padding: 6px 14px; cursor: pointer; border: none;
+    background: transparent; color: var(--text2);
+    transition: all 0.2s;
+  }
+  .mode-btn.active { background: var(--cyan-dim); color: var(--cyan); }
+  .mode-btn:hover:not(.active) { background: rgba(255,255,255,0.04); }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: flex; gap: 20px; flex-wrap: wrap;
+    font-family: var(--mono); font-size: 0.68rem;
+    color: var(--text3); padding: 10px 16px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .stat { display: flex; gap: 6px; align-items: center; }
+  .stat-val { color: var(--text2); }
+
+  /* ── Bottom full-width controls ── */
+  .bottom-controls {
+    display: flex; gap: 10px; flex-wrap: wrap;
+  }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: rgba(6,214,160,0.15); border: 1px solid var(--green);
+    color: var(--green); font-family: var(--mono); font-size: 0.78rem;
+    padding: 10px 24px; border-radius: 8px;
+    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    z-index: 100; white-space: nowrap;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-hot); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">VOICE<span>/</span>MINUTES</div>
+    <div class="status-pill" id="statusPill">
+      <span class="dot"></span>
+      <span id="statusText">待機中</span>
+    </div>
+  </header>
+
+  <!-- Waveform -->
+  <div class="waveform-wrap">
+    <div class="waveform-label">AUDIO INPUT</div>
+    <canvas id="waveCanvas"></canvas>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-bar">
+    <div class="stat">文字数 <span class="stat-val" id="charCount">0</span></div>
+    <div class="stat">発言数 <span class="stat-val" id="sentenceCount">0</span></div>
+    <div class="stat">経過時間 <span class="stat-val" id="elapsed">00:00</span></div>
+    <div class="stat">言語 <span class="stat-val">日本語 (ja-JP)</span></div>
+    <div class="stat" style="margin-left:auto">
+      <div class="mode-toggle">
+        <button class="mode-btn active" onclick="setMode('summary')" id="modeSummary">箇条書き</button>
+        <button class="mode-btn" onclick="setMode('structured')" id="modeStructured">構造化</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main grid -->
+  <div class="main-grid">
+    <!-- Transcript panel -->
+    <div class="panel">
+      <div class="panel-title">🎙 文字起こし</div>
+      <div class="transcript-box" id="transcriptBox"></div>
+      <div class="controls">
+        <button class="btn btn-sm" onclick="clearTranscript()">🗑 クリア</button>
+        <button class="btn btn-sm btn-save" onclick="saveTranscript()">💾 保存</button>
+        <button class="btn btn-sm" onclick="copyTranscript()">📋 コピー</button>
+      </div>
+    </div>
+
+    <!-- Minutes panel -->
+    <div class="panel">
+      <div class="panel-title">🤖 議事録 <span style="color:var(--text3);font-family:var(--sans);font-size:0.65rem;text-transform:none;letter-spacing:0">（オフライン処理）</span></div>
+      <div class="minutes-box" id="minutesBox"></div>
+      <div class="controls">
+        <button class="btn btn-sm" onclick="clearMinutes()">🗑 クリア</button>
+        <button class="btn btn-sm btn-save" onclick="saveMinutes()">💾 保存</button>
+        <button class="btn btn-sm" onclick="copyMinutes()">📋 コピー</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main action buttons -->
+  <div class="bottom-controls">
+    <button class="btn btn-record" id="recordBtn" onclick="toggleRecording()">
+      <span id="recordIcon">⏺</span>
+      <span id="recordLabel">録音開始</span>
+    </button>
+    <button class="btn btn-generate" id="generateBtn" onclick="generateMinutes()" disabled>
+      ✨ 議事録を生成
+    </button>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════
+let recognition = null;
+let isRecording = false;
+let fullText = '';
+let partialNode = null;
+let startTime = null;
+let timerInterval = null;
+let currentMode = 'summary';
+let animFrame = null;
+let amplitudeLevel = 0;
+let bars = new Float32Array(48).fill(0.05);
+
+// ═══════════════════════════════════════════════════════════
+//  WAVEFORM CANVAS
+// ═══════════════════════════════════════════════════════════
+const canvas = document.getElementById('waveCanvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = canvas.offsetWidth * devicePixelRatio;
+  canvas.height = canvas.offsetHeight * devicePixelRatio;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+function drawWaveform() {
+  animFrame = requestAnimationFrame(drawWaveform);
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const count = bars.length;
+  const barW = W / count * 0.55;
+  const gap  = W / count * 0.45;
+
+  for (let i = 0; i < count; i++) {
+    // Animate toward target
+    const target = isRecording
+      ? amplitudeLevel * (0.3 + 0.7 * Math.abs(Math.sin(Date.now() * 0.003 + i * 0.5)))
+      : 0.04 + 0.02 * Math.abs(Math.sin(Date.now() * 0.001 + i * 0.3));
+    bars[i] += (target - bars[i]) * (isRecording ? 0.35 : 0.06);
+    bars[i] = Math.max(0.02, Math.min(1, bars[i]));
+
+    const x = i * (barW + gap);
+    const bh = bars[i] * H * 0.88;
+    const y = (H - bh) / 2;
+
+    const grad = ctx.createLinearGradient(x, y, x, y + bh);
+    if (isRecording) {
+      grad.addColorStop(0, `rgba(255,51,102,${0.3 + bars[i]*0.6})`);
+      grad.addColorStop(0.5, `rgba(0,212,255,${0.5 + bars[i]*0.4})`);
+      grad.addColorStop(1, `rgba(123,47,255,${0.3 + bars[i]*0.6})`);
+    } else {
+      grad.addColorStop(0, `rgba(0,212,255,0.08)`);
+      grad.addColorStop(1, `rgba(0,212,255,0.03)`);
+    }
+    ctx.fillStyle = grad;
+    const r = barW / 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, barW, bh, r);
+    ctx.fill();
+  }
+}
+drawWaveform();
+
+// ═══════════════════════════════════════════════════════════
+//  TIMER
+// ═══════════════════════════════════════════════════════════
+function startTimer() {
+  startTime = Date.now();
+  timerInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const m = Math.floor(s / 60).toString().padStart(2,'0');
+    const ss = (s % 60).toString().padStart(2,'0');
+    document.getElementById('elapsed').textContent = `${m}:${ss}`;
+  }, 500);
+}
+function stopTimer() {
+  clearInterval(timerInterval);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SPEECH RECOGNITION
+// ═══════════════════════════════════════════════════════════
+function initRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    showToast('⚠️ このブラウザは音声認識に未対応です（Chrome推奨）', 'warn');
+    return false;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.lang = 'ja-JP';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => {
+    setStatus('listening', '録音中');
+    amplitudeLevel = 0.4;
+  };
+
+  recognition.onresult = (e) => {
+    amplitudeLevel = 0.3 + Math.random() * 0.5;
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+        if (fullText && !fullText.endsWith('\n')) fullText += '\n';
+        fullText += t;
+        updateStats();
+        renderTranscript();
+        document.getElementById('generateBtn').disabled = false;
+      } else {
+        interim = t;
+      }
+    }
+    if (partialNode) partialNode.remove();
+    if (interim) {
+      partialNode = document.createElement('span');
+      partialNode.className = 'partial-text';
+      partialNode.textContent = interim;
+      document.getElementById('transcriptBox').appendChild(partialNode);
+    }
+    document.getElementById('transcriptBox').scrollTop = 9999;
+  };
+
+  recognition.onerror = (e) => {
+    if (e.error === 'no-speech' || e.error === 'audio-capture') return;
+    if (e.error === 'not-allowed') {
+      showToast('🚫 マイクのアクセスが拒否されました', 'warn');
+      stopRecording();
+    }
+  };
+
+  recognition.onend = () => {
+    if (isRecording) {
+      try { recognition.start(); } catch(e){}
+    } else {
+      setStatus('idle', '待機中');
+      amplitudeLevel = 0;
+    }
+  };
+  return true;
+}
+
+function toggleRecording() {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+}
+
+function startRecording() {
+  if (!recognition && !initRecognition()) return;
+  isRecording = true;
+  recognition.start();
+  startTimer();
+
+  const btn = document.getElementById('recordBtn');
+  btn.classList.add('active');
+  document.getElementById('recordIcon').textContent = '⏹';
+  document.getElementById('recordLabel').textContent = '録音停止';
+}
+
+function stopRecording() {
+  isRecording = false;
+  if (recognition) recognition.stop();
+  stopTimer();
+  amplitudeLevel = 0;
+
+  const btn = document.getElementById('recordBtn');
+  btn.classList.remove('active');
+  document.getElementById('recordIcon').textContent = '⏺';
+  document.getElementById('recordLabel').textContent = '録音開始';
+  setStatus('idle', '待機中');
+  if (partialNode) { partialNode.remove(); partialNode = null; }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER & STATS
+// ═══════════════════════════════════════════════════════════
+function renderTranscript() {
+  const box = document.getElementById('transcriptBox');
+  const lines = fullText.split('\n').filter(l => l.trim());
+  box.innerHTML = lines.map(l => `<div>${escHtml(l)}</div>`).join('');
+}
+
+function updateStats() {
+  document.getElementById('charCount').textContent = fullText.replace(/\n/g,'').length;
+  document.getElementById('sentenceCount').textContent = fullText.split('\n').filter(l=>l.trim()).length;
+}
+
+function escHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  STATUS
+// ═══════════════════════════════════════════════════════════
+function setStatus(type, text) {
+  const pill = document.getElementById('statusPill');
+  pill.className = 'status-pill ' + type;
+  document.getElementById('statusText').textContent = text;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MODE
+// ═══════════════════════════════════════════════════════════
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('modeSummary').classList.toggle('active', mode === 'summary');
+  document.getElementById('modeStructured').classList.toggle('active', mode === 'structured');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  OFFLINE NLP ENGINE
+// ═══════════════════════════════════════════════════════════
+function generateMinutes() {
+  if (!fullText.trim()) { showToast('テキストがありません'); return; }
+  setStatus('processing', '解析中...');
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true; btn.textContent = '⚙️ 処理中...';
+
+  setTimeout(() => {
+    const result = currentMode === 'summary' ? buildSummary(fullText) : buildStructured(fullText);
+    document.getElementById('minutesBox').textContent = result;
+    btn.disabled = false; btn.innerHTML = '✨ 議事録を生成';
+    setStatus('idle', '待機中');
+    showToast('✅ 議事録を生成しました（オフライン）');
+  }, 400);
+}
+
+function splitSentences(text) {
+  return text.replace(/\n/g,'。')
+    .split(/[。！？.!?]+/)
+    .map(s => s.trim())
+    .filter(s => s.length >= 6);
+}
+
+const KW_IMPORTANCE = ['について','重要','必要','課題','問題','提案','計画','方針','目標',
+  '予定','対応','検討','確認','報告','共有','実施','進捗','状況','結果','成果','影響','リスク','改善'];
+const KW_DECISION   = ['決定','決まり','決めた','合意','承認','採用','することにした','になった','とする','こととした','方向で','採択'];
+const KW_TODO       = ['してください','お願い','担当','対応','確認','調査','作成','準備','実施','送って','連絡','報告','提出','する予定','やること'];
+const KW_TOPIC      = ['について','に関する','の件','の話','テーマ','議題','話題','アジェンダ'];
+const FILLERS       = ['えー','えーと','あのー','あの','まあ','そうですね','なんか','ちょっと','やっぱり'];
+
+function normalize(text) {
+  let t = text;
+  FILLERS.forEach(f => { t = t.split(f).join(''); });
+  return t.replace(/だよ$/, 'です').replace(/じゃん/, 'ではないでしょうか').replace(/〜/g,'').trim();
+}
+
+function scoreImportance(s) {
+  return KW_IMPORTANCE.filter(w => s.includes(w)).length + (s.length > 10 && s.length < 60 ? 1 : 0);
+}
+
+function now() {
+  const d = new Date();
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function buildSummary(text) {
+  const sentences = splitSentences(text);
+  const scored = sentences.map(s => [normalize(s), scoreImportance(s)])
+    .filter(([,sc]) => sc > 0)
+    .sort((a,b) => b[1]-a[1]).slice(0,8).map(([s]) => s);
+  const points = scored.length > 0 ? scored : sentences.slice(0,5).map(normalize);
+  const summary = normalize(sentences.sort((a,b) => b.length-a.length)[0] || '（内容なし）');
+
+  return [
+    `# 📋 議事録`,
+    `作成日時: ${now()}`,
+    `生成方式: オフライン解析 (Web Speech API)`,
+    ``,
+    `${'─'.repeat(40)}`,
+    ``,
+    `## 📌 主な内容`,
+    ...points.map(p => `  • ${p}`),
+    ``,
+    `## 💬 まとめ`,
+    `  ${summary.length > 80 ? summary.slice(0,80)+'…' : summary}`,
+    ``,
+    `${'─'.repeat(40)}`,
+    `発言数: ${sentences.length}文 / 文字数: ${text.replace(/\n/g,'').length}字`,
+  ].join('\n');
+}
+
+function buildStructured(text) {
+  const sentences = splitSentences(text);
+  const topics    = sentences.filter(s => KW_TOPIC.some(w => s.includes(w))).slice(0,5).map(normalize);
+  const decisions = sentences.filter(s => KW_DECISION.some(w => s.includes(w))).slice(0,6).map(normalize);
+  const todos     = sentences.filter(s => KW_TODO.some(w => s.includes(w))).slice(0,8).map(normalize);
+  const usedSet   = new Set([...decisions,...todos]);
+  const others    = sentences.map(normalize).filter(s => !usedSet.has(s) && s.length >= 8).slice(0,4);
+
+  const personRe   = /([ぁ-んァ-ン一-龯]{2,6})(さん|部長|課長|担当|氏|様)/;
+  const deadlineRe = /(\d+月\d+日|今週|来週|今月|来月|明日|明後日|\d+日以内|\d+日まで)/;
+
+  const todoRows = todos.length === 0
+    ? `  | （なし） | ─ | ─ |`
+    : todos.map(t => {
+        const p = (t.match(personRe)||['','─'])[0] || '─';
+        const d = (t.match(deadlineRe)||['─'])[0] || '─';
+        return `  | ${t.slice(0,30)} | ${p} | ${d} |`;
+      }).join('\n');
+
+  return [
+    `# 📋 構造化議事録`,
+    `作成日時: ${now()}`,
+    `生成方式: オフライン解析 (Web Speech API)`,
+    ``,
+    `${'─'.repeat(40)}`,
+    ``,
+    `## 📋 議題・トピック`,
+    topics.length > 0 ? topics.map(t=>`  • ${t}`).join('\n') : '  • （自動検出なし）',
+    ``,
+    `## ✅ 決定事項`,
+    decisions.length > 0 ? decisions.map(d=>`  • ${d}`).join('\n') : '  • （決定事項なし）',
+    ``,
+    `## 📌 アクションアイテム`,
+    `  | タスク | 担当 | 期限 |`,
+    `  |--------|------|------|`,
+    todoRows,
+    ``,
+    `## 💬 備考・その他`,
+    others.length > 0 ? others.map(o=>`  • ${o}`).join('\n') : '  • （なし）',
+    ``,
+    `${'─'.repeat(40)}`,
+    `発言数: ${sentences.length}文 / 文字数: ${text.replace(/\n/g,'').length}字`,
+  ].join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SAVE / COPY / CLEAR
+// ═══════════════════════════════════════════════════════════
+function saveTranscript() {
+  if (!fullText.trim()) { showToast('テキストがありません'); return; }
+  download(`transcription_${timestamp()}.txt`, fullText);
+  showToast('💾 文字起こしを保存しました');
+}
+function saveMinutes() {
+  const txt = document.getElementById('minutesBox').textContent;
+  if (!txt.trim()) { showToast('議事録がありません'); return; }
+  download(`minutes_${timestamp()}.txt`, txt);
+  showToast('💾 議事録を保存しました');
+}
+function copyTranscript() {
+  if (!fullText.trim()) { showToast('テキストがありません'); return; }
+  navigator.clipboard.writeText(fullText).then(() => showToast('📋 コピーしました'));
+}
+function copyMinutes() {
+  const txt = document.getElementById('minutesBox').textContent;
+  if (!txt.trim()) { showToast('議事録がありません'); return; }
+  navigator.clipboard.writeText(txt).then(() => showToast('📋 コピーしました'));
+}
+function clearTranscript() {
+  fullText = ''; renderTranscript(); updateStats();
+  document.getElementById('generateBtn').disabled = true;
+  showToast('🗑 テキストをクリアしました');
+}
+function clearMinutes() {
+  document.getElementById('minutesBox').textContent = '';
+  showToast('🗑 議事録をクリアしました');
+}
+function download(name, content) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], {type:'text/plain;charset=utf-8'}));
+  a.download = name; a.click();
+}
+function timestamp() {
+  return new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════════
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+</script>
+</body>
+</html>
