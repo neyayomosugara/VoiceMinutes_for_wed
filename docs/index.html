@@ -528,14 +528,33 @@ function toggleRecording() {
 
 function startRecording() {
   if (!recognition && !initRecognition()) return;
-  isRecording = true;
-  recognition.start();
-  startTimer();
 
-  const btn = document.getElementById('recordBtn');
-  btn.classList.add('active');
-  document.getElementById('recordIcon').textContent = '⏹';
-  document.getElementById('recordLabel').textContent = '録音停止';
+  // 明示的にマイク許可ダイアログを表示してから録音開始
+  setStatus('processing', 'マイク許可を確認中...');
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(stream => {
+      // 許可取得後すぐにトラックを解放（SpeechRecognizer が自前で管理するため）
+      stream.getTracks().forEach(t => t.stop());
+
+      isRecording = true;
+      recognition.start();
+      startTimer();
+
+      const btn = document.getElementById('recordBtn');
+      btn.classList.add('active');
+      document.getElementById('recordIcon').textContent = '⏹';
+      document.getElementById('recordLabel').textContent = '録音停止';
+    })
+    .catch(err => {
+      setStatus('idle', '待機中');
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        showToast('🚫 マイクのアクセスが拒否されました。ブラウザの設定から許可してください。');
+      } else if (err.name === 'NotFoundError') {
+        showToast('⚠️ マイクが見つかりません。接続を確認してください。');
+      } else {
+        showToast('⚠️ マイクへのアクセスに失敗しました: ' + err.message);
+      }
+    });
 }
 
 function stopRecording() {
