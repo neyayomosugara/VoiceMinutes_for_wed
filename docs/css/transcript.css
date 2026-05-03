@@ -238,3 +238,107 @@
   background: var(--clr-paper);
   flex-shrink: 0;
 }
+
+/* ════════════════
+   UTTERANCE EDIT
+════════════════ */
+.utterance-actions {
+  position: absolute;
+  right: 0;
+  top: var(--sp-2);
+  display: none;
+  gap: var(--sp-1);
+  align-items: center;
+}
+
+.utterance:hover .utterance-actions { display: flex; }
+
+.utterance-edit-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--clr-white);
+  border: 1px solid var(--clr-rule);
+  color: var(--clr-ink-faint);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-xs);
+}
+.utterance-edit-btn:hover {
+  background: var(--clr-paper-2);
+  color: var(--clr-ink);
+  border-color: var(--clr-ink-faint);
+}
+
+.utterance.editing .utterance-text { display: none; }
+
+.utterance-edit-area {
+  width: 100%;
+  font-family: var(--font-jp);
+  font-size: 0.97rem;
+  line-height: 1.85;
+  color: var(--clr-ink-soft);
+  background: var(--clr-paper-2);
+  border: 1px solid var(--clr-accent);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+  outline: none;
+  resize: vertical;
+  min-height: 56px;
+  box-shadow: 0 0 0 3px rgba(181,57,30,0.08);
+  margin-top: 2px;
+}
+
+/* ════════════════
+   MOBILE (≤640px)
+════════════════ */
+@media (max-width: 640px) {
+  .waveform-container {
+    margin: var(--sp-2) var(--sp-3) 0;
+    height: 36px;
+  }
+
+  .session-meta-strip {
+    padding: var(--sp-3) var(--sp-3);
+    flex-wrap: wrap;
+    gap: var(--sp-2) var(--sp-3);
+  }
+  .meta-field {
+    flex: none;
+    width: calc(50% - var(--sp-2));
+  }
+  .meta-field:last-child { width: 100%; }
+
+  .stats-bar {
+    padding: var(--sp-2) var(--sp-3);
+  }
+  .stat-item { padding-right: var(--sp-3); }
+  .stat-divider { margin-right: var(--sp-3); }
+  .search-wrap { display: none; }
+
+  .transcript-wrap {
+    margin: var(--sp-2) var(--sp-3) 0;
+  }
+  .transcript-paper {
+    padding: var(--sp-4) var(--sp-3) var(--sp-4) 36px;
+  }
+  .transcript-paper::before { left: 26px; }
+
+  /* Always show edit button on touch devices */
+  .utterance-actions { display: flex; }
+
+  .record-controls {
+    padding: var(--sp-3) var(--sp-3);
+    gap: var(--sp-2);
+  }
+  .btn-record {
+    min-width: 0;
+    flex: 1;
+    padding: var(--sp-3) var(--sp-4);
+    font-size: 0.88rem;
+  }
+}

@@ -29,11 +29,10 @@ const Toast = (() => {
 /* ── Panel switching ── */
 function switchPanel(id) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('[data-panel]').forEach(n => n.classList.remove('active'));
   const panel = document.getElementById(`panel-${id}`);
-  const nav   = document.querySelector(`[data-panel="${id}"]`);
   if (panel) panel.classList.add('active');
-  if (nav)   nav.classList.add('active');
+  document.querySelectorAll(`[data-panel="${id}"]`).forEach(n => n.classList.add('active'));
 }
 
 /* ── Welcome modal ── */
@@ -50,6 +49,12 @@ function closeWelcome() {
    MAIN APP MODULE
 ════════════════════════════════════════════ */
 const App = (() => {
+
+  /* ── Default keywords (captured before any customization) ── */
+  const DEFAULT_KEYWORDS = {
+    decision: NLP.getKeywords('decision'),
+    todo:     NLP.getKeywords('todo'),
+  };
 
   /* ── State ── */
   const state = {
@@ -79,6 +84,16 @@ const App = (() => {
     bindKeyboard();
     initDateTime();
     loadSettings();
+    loadKeywords();
+
+    Renderer.setEditCallback((index, newText) => {
+      if (index >= 0 && index < state.utterances.length) {
+        state.utterances[index].text = newText;
+        Renderer.renderTranscript(state.utterances, state.searchQuery,
+          document.getElementById('highlightKw')?.checked ?? true);
+        updateStats();
+      }
+    });
 
     /* Welcome modal */
     try {
@@ -348,6 +363,85 @@ const App = (() => {
     return `${Y}年${M}月${D}日(${wd}) ${h}:${m}`;
   }
 
+  /* ── Keyword management ── */
+  function loadKeywords() {
+    try {
+      const saved = localStorage.getItem('minutes_keywords');
+      if (saved) {
+        const kws = JSON.parse(saved);
+        if (Array.isArray(kws.decision)) NLP.setKeywords('decision', kws.decision);
+        if (Array.isArray(kws.todo))     NLP.setKeywords('todo', kws.todo);
+      }
+    } catch (_) {}
+    renderKeywordSettings();
+  }
+
+  function saveKeywords() {
+    try {
+      localStorage.setItem('minutes_keywords', JSON.stringify({
+        decision: NLP.getKeywords('decision'),
+        todo:     NLP.getKeywords('todo'),
+      }));
+    } catch (_) {}
+  }
+
+  function renderKeywordSettings() {
+    renderKwList('decision');
+    renderKwList('todo');
+  }
+
+  function renderKwList(type) {
+    const container = document.getElementById(`kwList-${type}`);
+    if (!container) return;
+    const keywords = NLP.getKeywords(type);
+    container.innerHTML = '';
+    keywords.forEach((kw, i) => {
+      const tag = document.createElement('span');
+      tag.className = `kw-tag kw-tag-${type}`;
+      const label = document.createElement('span');
+      label.textContent = kw;
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'kw-tag-remove';
+      removeBtn.title = '削除';
+      removeBtn.textContent = '×';
+      removeBtn.addEventListener('click', () => {
+        const arr = NLP.getKeywords(type);
+        arr.splice(i, 1);
+        NLP.setKeywords(type, arr);
+        saveKeywords();
+        renderKwList(type);
+      });
+      tag.appendChild(label);
+      tag.appendChild(removeBtn);
+      container.appendChild(tag);
+    });
+  }
+
+  function addKeyword(type) {
+    const input = document.getElementById(`kwInput-${type}`);
+    if (!input) return;
+    const kw = input.value.trim();
+    if (!kw) return;
+    const arr = NLP.getKeywords(type);
+    if (!arr.includes(kw)) {
+      arr.push(kw);
+      NLP.setKeywords(type, arr);
+      saveKeywords();
+      renderKwList(type);
+    }
+    input.value = '';
+    input.focus();
+  }
+
+  function resetKeywords() {
+    if (!confirm('キーワードをデフォルトに戻しますか？')) return;
+    NLP.setKeywords('decision', DEFAULT_KEYWORDS.decision);
+    NLP.setKeywords('todo', DEFAULT_KEYWORDS.todo);
+    try { localStorage.removeItem('minutes_keywords'); } catch (_) {}
+    renderKeywordSettings();
+    Toast.show('キーワードをリセットしました');
+  }
+
   /* ── Settings persistence ── */
   function loadSettings() {
     try {
@@ -387,6 +481,8 @@ const App = (() => {
     setLanguage,
     toggleFiller,
     clearAll,
+    addKeyword,
+    resetKeywords,
   };
 
 })();
