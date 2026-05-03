@@ -2,7 +2,10 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#1c1a17">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Minutes — AI音声議事録</title>
   <meta name="description" content="ブラウザで完結する音声議事録アプリ。PDF・Word出力対応。">
 
@@ -355,41 +358,6 @@
           </section>
 
           <section class="settings-section">
-            <h2 class="settings-section-title">キーワード設定</h2>
-            <p class="setting-desc" style="margin-bottom:var(--sp-5);line-height:1.7;">議事録生成に使用するキーワードをカスタマイズできます。設定はブラウザに保存されます。</p>
-
-            <div class="kw-setting-block">
-              <div class="kw-setting-header">
-                <span class="setting-label">決定事項キーワード</span>
-                <span class="setting-desc">これらの言葉を含む発言を決定事項として抽出します</span>
-              </div>
-              <div class="kw-tag-list" id="kwList-decision"></div>
-              <div class="kw-add-form">
-                <input class="kw-add-input" id="kwInput-decision" placeholder="キーワードを追加..."
-                  onkeydown="if(event.key==='Enter'){App.addKeyword('decision')}">
-                <button class="btn btn-sm btn-ghost" onclick="App.addKeyword('decision')">追加 ＋</button>
-              </div>
-            </div>
-
-            <div class="kw-setting-block">
-              <div class="kw-setting-header">
-                <span class="setting-label">ToDoキーワード</span>
-                <span class="setting-desc">これらの言葉を含む発言をアクションアイテムとして抽出します</span>
-              </div>
-              <div class="kw-tag-list" id="kwList-todo"></div>
-              <div class="kw-add-form">
-                <input class="kw-add-input" id="kwInput-todo" placeholder="キーワードを追加..."
-                  onkeydown="if(event.key==='Enter'){App.addKeyword('todo')}">
-                <button class="btn btn-sm btn-ghost" onclick="App.addKeyword('todo')">追加 ＋</button>
-              </div>
-            </div>
-
-            <div class="kw-reset-row">
-              <button class="btn btn-sm btn-ghost" onclick="App.resetKeywords()">デフォルトに戻す</button>
-            </div>
-          </section>
-
-          <section class="settings-section">
             <h2 class="settings-section-title">ショートカット</h2>
             <div class="shortcut-list">
               <div class="shortcut-row"><kbd>Space</kbd> 録音 開始 / 停止</div>
@@ -404,6 +372,27 @@
 
     </main>
   </div>
+
+
+  <!-- ── Mobile Bottom Navigation ── -->
+  <nav class="mobile-nav" aria-label="モバイルナビゲーション">
+    <button class="mobile-nav-item active" data-panel="record" onclick="switchPanel('record')" aria-label="録音">
+      <span class="mobile-nav-icon">◎</span>
+      <span class="mobile-nav-label">録音</span>
+    </button>
+    <button class="mobile-nav-item" data-panel="minutes" onclick="switchPanel('minutes')" aria-label="議事録">
+      <span class="mobile-nav-icon">≡</span>
+      <span class="mobile-nav-label">議事録</span>
+    </button>
+    <button class="mobile-nav-item" data-panel="export" onclick="switchPanel('export')" aria-label="出力">
+      <span class="mobile-nav-icon">↗</span>
+      <span class="mobile-nav-label">出力</span>
+    </button>
+    <button class="mobile-nav-item" data-panel="settings" onclick="switchPanel('settings')" aria-label="設定">
+      <span class="mobile-nav-icon">⊙</span>
+      <span class="mobile-nav-label">設定</span>
+    </button>
+  </nav>
 
   <!-- ── Welcome Modal ── -->
   <div class="modal-overlay" id="welcomeModal">
@@ -421,26 +410,6 @@
       <p class="modal-note">すべての処理はブラウザ内で完結します。音声データは外部に送信されません。</p>
     </div>
   </div>
-
-  <!-- ── Mobile bottom navigation ── -->
-  <nav class="mobile-nav" id="mobileNav">
-    <button class="mobile-nav-item active" data-panel="record" onclick="switchPanel('record')">
-      <span class="mobile-nav-icon">◎</span>
-      <span class="mobile-nav-label">録音</span>
-    </button>
-    <button class="mobile-nav-item" data-panel="minutes" onclick="switchPanel('minutes')">
-      <span class="mobile-nav-icon">≡</span>
-      <span class="mobile-nav-label">議事録</span>
-    </button>
-    <button class="mobile-nav-item" data-panel="export" onclick="switchPanel('export')">
-      <span class="mobile-nav-icon">↗</span>
-      <span class="mobile-nav-label">出力</span>
-    </button>
-    <button class="mobile-nav-item" data-panel="settings" onclick="switchPanel('settings')">
-      <span class="mobile-nav-icon">⊙</span>
-      <span class="mobile-nav-label">設定</span>
-    </button>
-  </nav>
 
   <!-- ── Toast container ── -->
   <div class="toast-stack" id="toastStack"></div>

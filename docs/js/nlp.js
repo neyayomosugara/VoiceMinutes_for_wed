@@ -229,17 +229,6 @@ const NLP = (() => {
     };
   }
 
-  /* ── Custom keyword management ── */
-  function setKeywords(type, arr) {
-    if (KW[type] && Array.isArray(arr)) {
-      KW[type] = arr.slice();
-    }
-  }
-
-  function getKeywords(type) {
-    return KW[type] ? KW[type].slice() : [];
-  }
-
   /* ── Utilities ── */
   function escHtml(t) {
     return String(t)
@@ -254,6 +243,6 @@ const NLP = (() => {
   }
 
   /* ── Public API ── */
-  return { analyse, highlightText, normalize, escHtml, escRe, KW, setKeywords, getKeywords };
+  return { analyse, highlightText, normalize, escHtml, escRe, KW };
 
 })();

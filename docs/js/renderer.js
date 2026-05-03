@@ -67,62 +67,6 @@ const Renderer = (() => {
   /* ══════════════════════════════
      TRANSCRIPT
   ══════════════════════════════ */
-  let editCallback = null;
-  function setEditCallback(fn) { editCallback = fn; }
-
-  function startEdit(utteranceDiv, index, currentText) {
-    if (utteranceDiv.classList.contains('editing')) return;
-    utteranceDiv.classList.add('editing');
-
-    const textDiv = utteranceDiv.querySelector('.utterance-text');
-    if (textDiv) textDiv.style.display = 'none';
-
-    const textarea = document.createElement('textarea');
-    textarea.className = 'utterance-edit-area';
-    textarea.value = currentText;
-    textarea.rows = Math.max(2, Math.ceil(currentText.length / 40));
-
-    let isSaving = false;
-
-    const saveEdit = () => {
-      if (isSaving) return;
-      isSaving = true;
-      const newText = textarea.value.trim();
-      if (newText && editCallback) {
-        editCallback(index, newText);
-      } else {
-        utteranceDiv.classList.remove('editing');
-        if (textDiv) textDiv.style.display = '';
-        if (textarea.parentNode) textarea.remove();
-      }
-    };
-
-    const cancelEdit = () => {
-      if (isSaving) return;
-      isSaving = true;
-      utteranceDiv.classList.remove('editing');
-      if (textDiv) textDiv.style.display = '';
-      if (textarea.parentNode) textarea.remove();
-    };
-
-    textarea.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        saveEdit();
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        cancelEdit();
-      }
-    });
-
-    textarea.addEventListener('blur', saveEdit);
-
-    utteranceDiv.insertBefore(textarea, textDiv ? textDiv.nextSibling : null);
-    textarea.focus();
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-  }
-
   function renderTranscript(utterances, searchQuery = '', highlights = true) {
     const paper = document.getElementById('transcriptPaper');
     const empty = document.getElementById('transcriptEmpty');
@@ -162,23 +106,9 @@ const Renderer = (() => {
       timeDiv.className = 'utterance-time';
       timeDiv.textContent = formatTime(u.time);
 
-      const actionsDiv = document.createElement('div');
-      actionsDiv.className = 'utterance-actions';
-
-      const editBtn = document.createElement('button');
-      editBtn.className = 'utterance-edit-btn';
-      editBtn.title = '編集 (Ctrl+Enter で確定 / Esc でキャンセル)';
-      editBtn.textContent = '✎';
-      editBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        startEdit(div, i, u.text);
-      });
-      actionsDiv.appendChild(editBtn);
-
       div.appendChild(numSpan);
       div.appendChild(textDiv);
       div.appendChild(timeDiv);
-      div.appendChild(actionsDiv);
       frag.appendChild(div);
     });
 
@@ -425,7 +355,6 @@ const Renderer = (() => {
     appendPartial,
     removePartial,
     renderMinutes,
-    setEditCallback,
   };
 
 })();

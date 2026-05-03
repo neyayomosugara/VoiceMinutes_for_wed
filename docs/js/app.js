@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════
    APP.JS — Main Application Controller
-   Minutes v1.0
+   v2: Brave対応 / モバイル最適化
 ═══════════════════════════════════════════════ */
 
 /* ── Toast utility ── */
@@ -8,20 +8,15 @@ const Toast = (() => {
   function show(message, kind = '') {
     const stack = document.getElementById('toastStack');
     if (!stack) return;
-
     const el = document.createElement('div');
     el.className = `toast${kind ? ' toast-' + kind : ''}`;
     el.textContent = message;
     stack.appendChild(el);
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => el.classList.add('show'));
-    });
-
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
     setTimeout(() => {
       el.classList.remove('show');
       setTimeout(() => el.remove(), 400);
-    }, 3000);
+    }, 3500);
   }
   return { show };
 })();
@@ -29,19 +24,18 @@ const Toast = (() => {
 /* ── Panel switching ── */
 function switchPanel(id) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('[data-panel]').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(n => n.classList.remove('active'));
   const panel = document.getElementById(`panel-${id}`);
+  const navs  = document.querySelectorAll(`[data-panel="${id}"]`);
   if (panel) panel.classList.add('active');
-  document.querySelectorAll(`[data-panel="${id}"]`).forEach(n => n.classList.add('active'));
+  navs.forEach(n => n.classList.add('active'));
 }
 
-/* ── Welcome modal ── */
 function closeWelcome() {
   const modal = document.getElementById('welcomeModal');
-  if (modal) {
-    modal.classList.remove('show');
-    setTimeout(() => modal.style.display = 'none', 300);
-  }
+  if (!modal) return;
+  modal.classList.remove('show');
+  setTimeout(() => modal.style.display = 'none', 300);
   try { localStorage.setItem('minutes_welcomed', '1'); } catch (_) {}
 }
 
@@ -50,13 +44,6 @@ function closeWelcome() {
 ════════════════════════════════════════════ */
 const App = (() => {
 
-  /* ── Default keywords (captured before any customization) ── */
-  const DEFAULT_KEYWORDS = {
-    decision: NLP.getKeywords('decision'),
-    todo:     NLP.getKeywords('todo'),
-  };
-
-  /* ── State ── */
   const state = {
     utterances:    [],
     isRecording:   false,
@@ -65,35 +52,20 @@ const App = (() => {
     searchQuery:   '',
     mode:          'formal',
     language:      'ja-JP',
-    fillerRemoval: true,
-    amplitude:     0,
+    speechSupported: true,
   };
 
-  /* Store globally for Exporter access */
-  window._utterances = state.utterances;
+  window._utterances  = state.utterances;
+  window._minutesData = null;
 
   /* ── Init ── */
   function init() {
-    if (!Speech.isSupported()) {
-      Toast.show('このブラウザは音声認識に対応していません（Chrome / Edge 推奨）', 'error');
-      document.getElementById('recordBtn').disabled = true;
-    }
-
     Renderer.initWaveform();
     bindSpeechCallbacks();
     bindKeyboard();
-    initDateTime();
     loadSettings();
-    loadKeywords();
-
-    Renderer.setEditCallback((index, newText) => {
-      if (index >= 0 && index < state.utterances.length) {
-        state.utterances[index].text = newText;
-        Renderer.renderTranscript(state.utterances, state.searchQuery,
-          document.getElementById('highlightKw')?.checked ?? true);
-        updateStats();
-      }
-    });
+    checkBrowserSupport();
+    initDateTime();
 
     /* Welcome modal */
     try {
@@ -101,9 +73,63 @@ const App = (() => {
         setTimeout(() => {
           const m = document.getElementById('welcomeModal');
           if (m) m.classList.add('show');
-        }, 400);
+        }, 500);
       }
     } catch (_) {}
+
+    /* Prevent page scroll on iOS when in standalone/PWA mode */
+    document.addEventListener('touchmove', e => {
+      if (e.target.closest('.transcript-paper, .minutes-container, .settings-sections, .export-grid')) return;
+      e.preventDefault();
+    }, { passive: false });
+  }
+
+  /* ── Browser support check ── */
+  function checkBrowserSupport() {
+    const supported = Speech.isSupported();
+    state.speechSupported = supported;
+
+    const recordBtn = document.getElementById('recordBtn');
+
+    if (!supported) {
+      /* Brave or Firefox: show clear warning, disable record */
+      if (recordBtn) {
+        recordBtn.disabled = false; /* keep enabled to show warning on tap */
+      }
+      showBraveWarning();
+      return;
+    }
+
+    if (Speech.isBrave()) {
+      Toast.show('Braveをお使いです。設定でWeb Speech APIを有効にしてください', 'info');
+    }
+  }
+
+  function showBraveWarning() {
+    /* Insert an info banner below the waveform */
+    const waveform = document.querySelector('.waveform-container');
+    if (!waveform || document.getElementById('braveWarning')) return;
+
+    const banner = document.createElement('div');
+    banner.id = 'braveWarning';
+    banner.style.cssText = `
+      margin: 0 var(--sp-8);
+      padding: var(--sp-3) var(--sp-4);
+      background: #fff8e1;
+      border: 1px solid #f0c040;
+      border-radius: var(--radius-md);
+      font-size: 0.8rem;
+      line-height: 1.6;
+      color: #5a4000;
+    `;
+    banner.innerHTML = `
+      <strong>⚠️ 音声認識が利用できません</strong><br>
+      Brave ブラウザをご利用の場合は、<strong>brave://settings/privacy</strong> → 
+      「Google サービスを使用」を有効にしてページを再読み込みしてください。<br>
+      または <strong>Chrome / Edge</strong> をご利用ください。<br>
+      <small style="opacity:0.7">（文字起こし以外の機能はすべてご利用いただけます）</small>
+    `;
+    waveform.insertAdjacentElement('afterend', banner);
   }
 
   /* ── Speech callbacks ── */
@@ -116,8 +142,11 @@ const App = (() => {
     Speech.on('onResult', (text) => {
       state.utterances.push({ text, time: Date.now() });
       Renderer.removePartial();
-      Renderer.renderTranscript(state.utterances, state.searchQuery,
-        document.getElementById('highlightKw')?.checked ?? true);
+      Renderer.renderTranscript(
+        state.utterances,
+        state.searchQuery,
+        document.getElementById('highlightKw')?.checked ?? true
+      );
       updateStats();
       document.getElementById('generateBtn').disabled = false;
     });
@@ -130,56 +159,89 @@ const App = (() => {
     Speech.on('onStop', () => {
       setStatus('idle', '待機中');
       Renderer.setRecording(false);
-      Renderer.setAmplitude(0);
       Renderer.removePartial();
     });
 
     Speech.on('onAmplitude', (val) => {
-      state.amplitude = val;
       Renderer.setAmplitude(val);
-      document.getElementById('waveLevel').textContent =
-        state.isRecording ? `${Math.round(val * 100)}%` : '— dB';
+      const levelEl = document.getElementById('waveLevel');
+      if (levelEl) {
+        levelEl.textContent = state.isRecording
+          ? `${Math.round(val * 100)}%`
+          : '— dB';
+      }
     });
 
-    Speech.on('onError', (errCode) => {
-      if (errCode === 'permission_denied') {
-        Toast.show('マイクのアクセスが拒否されました。ブラウザの設定から許可してください。', 'error');
-      } else if (errCode === 'network') {
-        Toast.show('音声認識サービスへの接続に失敗しました', 'error');
-      } else {
-        Toast.show(`認識エラー: ${errCode}`, 'error');
+    Speech.on('onError', (code) => {
+      let msg = '音声認識エラーが発生しました';
+      if (code === 'permission_denied') {
+        msg = 'マイクのアクセスが拒否されました。ブラウザのアドレスバーの🔒をタップして許可してください。';
+      } else if (code === 'network') {
+        msg = 'ネットワークエラー。オフライン環境では音声認識が利用できない場合があります。';
       }
+      Toast.show(msg, 'error');
       stopRecording();
+    });
+
+    Speech.on('onUnsupported', () => {
+      state.speechSupported = false;
+      showBraveWarning();
+      stopRecording();
+    });
+
+    /* Edit callback */
+    Renderer.setEditCallback((index, newText) => {
+      if (state.utterances[index]) {
+        state.utterances[index].text = newText;
+        Renderer.renderTranscript(
+          state.utterances, state.searchQuery,
+          document.getElementById('highlightKw')?.checked ?? true
+        );
+        updateStats();
+      }
     });
   }
 
   /* ── Recording ── */
   async function toggleRecording() {
-    if (state.isRecording) stopRecording();
-    else await startRecording();
+    if (state.isRecording) {
+      stopRecording();
+    } else {
+      await startRecording();
+    }
   }
 
   async function startRecording() {
+    if (!state.speechSupported) {
+      Toast.show('音声認識に対応したブラウザ（Chrome / Edge）をお使いください', 'error');
+      return;
+    }
+
+    setStatus('processing', '許可確認中...');
+
     try {
-      setStatus('processing', '許可確認中...');
       await Speech.start(state.language);
       state.isRecording = true;
+      state.startTime   = state.startTime || Date.now();
       startTimer();
 
-      const btn  = document.getElementById('recordBtn');
-      const icon = document.getElementById('recordIcon');
-      const lbl  = document.getElementById('recordLabel');
-      if (btn)  btn.classList.add('active');
-      if (lbl)  lbl.textContent = '録音停止';
+      const btn = document.getElementById('recordBtn');
+      const lbl = document.getElementById('recordLabel');
+      if (btn) btn.classList.add('active');
+      if (lbl) lbl.textContent = '録音停止';
 
     } catch (err) {
       setStatus('idle', '待機中');
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        Toast.show('マイクのアクセスが拒否されました', 'error');
-      } else if (err.name === 'NotFoundError') {
-        Toast.show('マイクが見つかりません', 'error');
+      const name = err.name || '';
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        Toast.show('マイクのアクセスが拒否されました。ブラウザの設定から許可してください。', 'error');
+      } else if (name === 'NotFoundError') {
+        Toast.show('マイクが見つかりません。デバイスを確認してください。', 'error');
+      } else if (name === 'NotSupportedError') {
+        showBraveWarning();
+        Toast.show('音声認識が利用できません。Chromeまたは設定を確認してください。', 'error');
       } else {
-        Toast.show('マイクへのアクセスに失敗しました', 'error');
+        Toast.show(`マイクエラー: ${err.message || name}`, 'error');
       }
     }
   }
@@ -202,8 +264,9 @@ const App = (() => {
 
   /* ── Timer ── */
   function startTimer() {
-    state.startTime = Date.now();
+    if (state.timerInterval) return;
     state.timerInterval = setInterval(() => {
+      if (!state.startTime) return;
       const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
       const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
       const s = String(elapsed % 60).padStart(2, '0');
@@ -214,6 +277,7 @@ const App = (() => {
 
   function stopTimer() {
     clearInterval(state.timerInterval);
+    state.timerInterval = null;
   }
 
   function getElapsed() {
@@ -223,16 +287,20 @@ const App = (() => {
 
   /* ── Status ── */
   function setStatus(type, text) {
-    const dot  = document.getElementById('statusDot');
-    const txt  = document.getElementById('statusText');
-    if (dot) dot.className = `status-dot${type === 'live' ? ' live' : type === 'processing' ? ' processing' : ''}`;
+    const dot = document.getElementById('statusDot');
+    const txt = document.getElementById('statusText');
+    if (dot) dot.className = `status-dot${
+      type === 'live' ? ' live' :
+      type === 'processing' ? ' processing' : ''
+    }`;
     if (txt) txt.textContent = text;
   }
 
   /* ── Stats ── */
   function updateStats() {
-    const totalChars = state.utterances.reduce((a, u) => a + u.text.length, 0);
-    const totalWords = state.utterances.reduce((a, u) => a + u.text.split(/[\s。、！？]+/).filter(Boolean).length, 0);
+    const totalChars  = state.utterances.reduce((a, u) => a + u.text.length, 0);
+    const totalWords  = state.utterances.reduce((a, u) =>
+      a + u.text.split(/[\s。、！？「」【】]+/).filter(Boolean).length, 0);
 
     const cc = document.getElementById('charCount');
     const uc = document.getElementById('uttCount');
@@ -251,8 +319,8 @@ const App = (() => {
 
     const meta = {
       title:     document.getElementById('sessionTitle')?.value.trim() || '無題の会議',
-      attendees: document.getElementById('attendees')?.value.trim() || '',
-      location:  document.getElementById('location')?.value.trim()  || '',
+      attendees: document.getElementById('attendees')?.value.trim()    || '',
+      location:  document.getElementById('location')?.value.trim()     || '',
       datetime:  formatDatetime(state.startTime),
       duration:  getElapsed(),
     };
@@ -267,14 +335,16 @@ const App = (() => {
     if (empty) empty.style.display = 'none';
     if (paper) paper.style.display = 'block';
 
-    Toast.show('議事録を生成しました');
+    Toast.show('議事録を生成しました ✓');
   }
 
   /* ── Filter transcript ── */
   function filterTranscript(query) {
     state.searchQuery = query;
-    Renderer.renderTranscript(state.utterances, query,
-      document.getElementById('highlightKw')?.checked ?? true);
+    Renderer.renderTranscript(
+      state.utterances, query,
+      document.getElementById('highlightKw')?.checked ?? true
+    );
   }
 
   /* ── Mode ── */
@@ -282,24 +352,25 @@ const App = (() => {
     state.mode = mode;
     document.getElementById('modeBtn-formal')?.classList.toggle('active', mode === 'formal');
     document.getElementById('modeBtn-concise')?.classList.toggle('active', mode === 'concise');
+    /* Re-render if minutes exist */
+    if (window._minutesData) Renderer.renderMinutes(window._minutesData, mode);
   }
 
   /* ── Language ── */
   function setLanguage(lang) {
     state.language = lang;
     Speech.setLanguage(lang);
-  }
-
-  /* ── Filler toggle ── */
-  function toggleFiller(enabled) {
-    state.fillerRemoval = enabled;
+    const label = document.getElementById('waveLabel');
+    if (label) label.textContent = `AUDIO INPUT / ${lang.toUpperCase()}`;
   }
 
   /* ── Clear all ── */
   function clearAll() {
     if (state.utterances.length > 0 && !confirm('すべてのデータをクリアしますか？')) return;
     if (state.isRecording) stopRecording();
+
     state.utterances.length = 0;
+    state.startTime = null;
     window._minutesData = null;
 
     Renderer.renderTranscript([], '', false);
@@ -321,23 +392,20 @@ const App = (() => {
   /* ── Keyboard shortcuts ── */
   function bindKeyboard() {
     document.addEventListener('keydown', (e) => {
-      const target = e.target.tagName;
-      if (target === 'INPUT' || target === 'TEXTAREA' || target === 'SELECT') return;
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
-      /* Space: toggle recording */
       if (e.code === 'Space' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         toggleRecording();
         return;
       }
-      /* Cmd/Ctrl + Enter: generate */
       if (e.code === 'Enter' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         switchPanel('minutes');
         generateMinutes();
         return;
       }
-      /* Cmd/Ctrl + S: PDF */
       if (e.code === 'KeyS' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         Exporter.toPDF();
@@ -346,118 +414,38 @@ const App = (() => {
     });
   }
 
-  /* ── Date display ── */
+  /* ── Date helpers ── */
   function initDateTime() {
     const d = new Date();
-    const dateStr = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
-    document.title = `Minutes — ${dateStr}`;
+    document.title = `Minutes — ${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
   }
 
   function formatDatetime(ts) {
     const d = ts ? new Date(ts) : new Date();
     const Y = d.getFullYear(), M = d.getMonth()+1, D = d.getDate();
     const days = ['日','月','火','水','木','金','土'];
-    const wd = days[d.getDay()];
     const h = String(d.getHours()).padStart(2,'0');
     const m = String(d.getMinutes()).padStart(2,'0');
-    return `${Y}年${M}月${D}日(${wd}) ${h}:${m}`;
-  }
-
-  /* ── Keyword management ── */
-  function loadKeywords() {
-    try {
-      const saved = localStorage.getItem('minutes_keywords');
-      if (saved) {
-        const kws = JSON.parse(saved);
-        if (Array.isArray(kws.decision)) NLP.setKeywords('decision', kws.decision);
-        if (Array.isArray(kws.todo))     NLP.setKeywords('todo', kws.todo);
-      }
-    } catch (_) {}
-    renderKeywordSettings();
-  }
-
-  function saveKeywords() {
-    try {
-      localStorage.setItem('minutes_keywords', JSON.stringify({
-        decision: NLP.getKeywords('decision'),
-        todo:     NLP.getKeywords('todo'),
-      }));
-    } catch (_) {}
-  }
-
-  function renderKeywordSettings() {
-    renderKwList('decision');
-    renderKwList('todo');
-  }
-
-  function renderKwList(type) {
-    const container = document.getElementById(`kwList-${type}`);
-    if (!container) return;
-    const keywords = NLP.getKeywords(type);
-    container.innerHTML = '';
-    keywords.forEach((kw, i) => {
-      const tag = document.createElement('span');
-      tag.className = `kw-tag kw-tag-${type}`;
-      const label = document.createElement('span');
-      label.textContent = kw;
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'kw-tag-remove';
-      removeBtn.title = '削除';
-      removeBtn.textContent = '×';
-      removeBtn.addEventListener('click', () => {
-        const arr = NLP.getKeywords(type);
-        arr.splice(i, 1);
-        NLP.setKeywords(type, arr);
-        saveKeywords();
-        renderKwList(type);
-      });
-      tag.appendChild(label);
-      tag.appendChild(removeBtn);
-      container.appendChild(tag);
-    });
-  }
-
-  function addKeyword(type) {
-    const input = document.getElementById(`kwInput-${type}`);
-    if (!input) return;
-    const kw = input.value.trim();
-    if (!kw) return;
-    const arr = NLP.getKeywords(type);
-    if (!arr.includes(kw)) {
-      arr.push(kw);
-      NLP.setKeywords(type, arr);
-      saveKeywords();
-      renderKwList(type);
-    }
-    input.value = '';
-    input.focus();
-  }
-
-  function resetKeywords() {
-    if (!confirm('キーワードをデフォルトに戻しますか？')) return;
-    NLP.setKeywords('decision', DEFAULT_KEYWORDS.decision);
-    NLP.setKeywords('todo', DEFAULT_KEYWORDS.todo);
-    try { localStorage.removeItem('minutes_keywords'); } catch (_) {}
-    renderKeywordSettings();
-    Toast.show('キーワードをリセットしました');
+    return `${Y}年${M}月${D}日(${days[d.getDay()]}) ${h}:${m}`;
   }
 
   /* ── Settings persistence ── */
   function loadSettings() {
     try {
       const saved = localStorage.getItem('minutes_settings');
-      if (!saved) return;
-      const cfg = JSON.parse(saved);
-
-      if (cfg.orgName)    document.getElementById('orgName').value    = cfg.orgName;
-      if (cfg.authorName) document.getElementById('authorName').value = cfg.authorName;
-      if (cfg.language)   document.getElementById('langSelect').value  = cfg.language, setLanguage(cfg.language);
+      if (saved) {
+        const cfg = JSON.parse(saved);
+        if (cfg.orgName)    document.getElementById('orgName').value    = cfg.orgName;
+        if (cfg.authorName) document.getElementById('authorName').value = cfg.authorName;
+        if (cfg.language)   {
+          document.getElementById('langSelect').value = cfg.language;
+          setLanguage(cfg.language);
+        }
+      }
     } catch (_) {}
 
-    /* Auto-save on change */
     ['orgName','authorName','langSelect'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener('change', saveSettings);
+      document.getElementById(id)?.addEventListener('change', saveSettings);
     });
   }
 
@@ -473,21 +461,12 @@ const App = (() => {
 
   /* ── Public API ── */
   return {
-    init,
-    toggleRecording,
-    generateMinutes,
-    filterTranscript,
-    setMode,
-    setLanguage,
-    toggleFiller,
-    clearAll,
-    addKeyword,
-    resetKeywords,
+    init, toggleRecording, generateMinutes,
+    filterTranscript, setMode, setLanguage, clearAll,
+    get isRecording() { return state.isRecording; },
   };
 
 })();
 
 /* ── Bootstrap ── */
-document.addEventListener('DOMContentLoaded', () => {
-  App.init();
-});
+document.addEventListener('DOMContentLoaded', () => App.init());

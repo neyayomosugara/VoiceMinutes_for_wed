@@ -1,5 +1,6 @@
 /* ═══════════════════════════════════════════════
    SPEECH.JS — Web Speech API Wrapper
+   v2: Brave / Android対応、フォールバック実装
 ═══════════════════════════════════════════════ */
 
 const Speech = (() => {
@@ -7,23 +8,80 @@ const Speech = (() => {
   let recognition = null;
   let isRunning   = false;
   let language    = 'ja-JP';
+  let restartTimer = null;
 
-  /* Callbacks set by App */
   const cb = {
-    onResult:   () => {},
-    onPartial:  () => {},
-    onStart:    () => {},
-    onStop:     () => {},
-    onError:    () => {},
-    onAmplitude:() => {},
+    onResult:    () => {},
+    onPartial:   () => {},
+    onStart:     () => {},
+    onStop:      () => {},
+    onError:     () => {},
+    onAmplitude: () => {},
+    onUnsupported: () => {},
   };
 
-  function isSupported() {
-    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  /* ── Feature detection ── */
+  function getSR() {
+    return window.SpeechRecognition
+        || window.webkitSpeechRecognition
+        || window.mozSpeechRecognition
+        || window.msSpeechRecognition
+        || null;
   }
 
+  function isSupported() {
+    return !!getSR();
+  }
+
+  /* Check if running in Brave */
+  function isBrave() {
+    return !!(navigator.brave && navigator.brave.isBrave);
+  }
+
+  /* ── Amplitude simulation via AudioContext ── */
+  let audioCtx = null, analyser = null, micStream = null, ampTimer = null;
+
+  async function startAmplitudeMonitor(stream) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      const source = audioCtx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      micStream = stream;
+
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      ampTimer = setInterval(() => {
+        analyser.getByteFrequencyData(data);
+        const sum = data.reduce((a, v) => a + v, 0);
+        const avg = sum / data.length / 255;
+        cb.onAmplitude(Math.min(1, avg * 3.5));
+      }, 60);
+    } catch (e) {
+      /* Fallback to random if AudioContext unavailable */
+      ampTimer = setInterval(() => {
+        cb.onAmplitude(isRunning ? 0.25 + Math.random() * 0.5 : 0);
+      }, 100);
+    }
+  }
+
+  function stopAmplitudeMonitor() {
+    clearInterval(ampTimer);
+    ampTimer = null;
+    if (micStream) {
+      micStream.getTracks().forEach(t => t.stop());
+      micStream = null;
+    }
+    if (audioCtx) {
+      audioCtx.close().catch(() => {});
+      audioCtx = null;
+    }
+    cb.onAmplitude(0);
+  }
+
+  /* ── Init recognition ── */
   function init() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SR = getSR();
     if (!SR) return false;
 
     recognition = new SR();
@@ -38,9 +96,6 @@ const Speech = (() => {
     };
 
     recognition.onresult = (e) => {
-      /* Simulate amplitude variation based on speech activity */
-      cb.onAmplitude(0.3 + Math.random() * 0.6);
-
       let interimText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const transcript = e.results[i][0].transcript;
@@ -48,15 +103,27 @@ const Speech = (() => {
           const text = transcript.trim();
           if (text.length > 0) cb.onResult(text);
         } else {
-          interimText = transcript;
+          interimText += transcript;
         }
       }
       cb.onPartial(interimText);
     };
 
     recognition.onerror = (e) => {
-      /* Non-fatal: no speech detected, audio capture glitch → just restart */
-      if (e.error === 'no-speech' || e.error === 'audio-capture') return;
+      console.warn('SpeechRecognition error:', e.error);
+
+      /* Non-fatal errors — just restart */
+      if (e.error === 'no-speech' || e.error === 'audio-capture') {
+        if (isRunning) {
+          clearTimeout(restartTimer);
+          restartTimer = setTimeout(() => {
+            if (isRunning) tryRestart();
+          }, 300);
+        }
+        return;
+      }
+
+      if (e.error === 'aborted') return; /* normal stop */
 
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         isRunning = false;
@@ -69,14 +136,22 @@ const Speech = (() => {
         return;
       }
 
-      cb.onError(e.error);
+      /* Other errors: try restart once */
+      if (isRunning) {
+        clearTimeout(restartTimer);
+        restartTimer = setTimeout(() => {
+          if (isRunning) tryRestart();
+        }, 500);
+      }
     };
 
     recognition.onend = () => {
-      cb.onAmplitude(0);
       if (isRunning) {
         /* Auto-restart for continuous recording */
-        try { recognition.start(); } catch (_) {}
+        clearTimeout(restartTimer);
+        restartTimer = setTimeout(() => {
+          if (isRunning) tryRestart();
+        }, 100);
       } else {
         cb.onStop();
       }
@@ -85,27 +160,71 @@ const Speech = (() => {
     return true;
   }
 
+  function tryRestart() {
+    if (!recognition || !isRunning) return;
+    try {
+      recognition.lang = language;
+      recognition.start();
+    } catch (e) {
+      /* Already started, ignore */
+    }
+  }
+
+  /* ── Public: start ── */
   async function start(lang) {
     language = lang || language;
 
-    /* Request microphone permission explicitly first */
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    stream.getTracks().forEach(t => t.stop());
-
-    if (!recognition && !init()) {
-      throw new Error('SpeechRecognition not supported');
+    /* 1. Request microphone permission */
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      const name = err.name || '';
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        throw Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' });
+      }
+      if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        throw Object.assign(new Error('No mic'), { name: 'NotFoundError' });
+      }
+      throw err;
     }
+
+    /* 2. Start amplitude monitor (keep stream alive for analysis) */
+    await startAmplitudeMonitor(stream);
+
+    /* 3. Init SpeechRecognition */
+    if (!getSR()) {
+      /* Browser doesn't support speech API (e.g. Brave with flag disabled) */
+      cb.onUnsupported();
+      stopAmplitudeMonitor();
+      throw Object.assign(new Error('SpeechRecognition not available'), { name: 'NotSupportedError' });
+    }
+
+    if (!recognition) init();
 
     recognition.lang = language;
     isRunning = true;
-    recognition.start();
+
+    /* Small delay to let mic settle */
+    await new Promise(r => setTimeout(r, 150));
+
+    try {
+      recognition.start();
+    } catch (e) {
+      /* Already running */
+    }
   }
 
+  /* ── Public: stop ── */
   function stop() {
     isRunning = false;
+    clearTimeout(restartTimer);
+    stopAmplitudeMonitor();
     if (recognition) {
-      try { recognition.stop(); } catch (_) {}
+      try { recognition.abort(); } catch (_) {}
+      try { recognition.stop();  } catch (_) {}
     }
+    cb.onStop();
   }
 
   function setLanguage(lang) {
@@ -117,6 +236,6 @@ const Speech = (() => {
     if (cb[event] !== undefined) cb[event] = handler;
   }
 
-  return { isSupported, start, stop, setLanguage, on };
+  return { isSupported, isBrave, start, stop, setLanguage, on };
 
 })();
