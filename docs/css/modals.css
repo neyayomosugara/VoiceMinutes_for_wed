@@ -1,0 +1,59 @@
+/* ═══════════════════════════════════════════════
+   MODALS.CSS — Extended modal variants
+   (Base modal styles are in components.css)
+═══════════════════════════════════════════════ */
+
+.welcome-modal {
+  max-width: 460px;
+}
+
+/* Progress / loading state for generation */
+.generating-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(248,246,241,0.85);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  z-index: 10;
+  border-radius: var(--radius-lg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-base);
+}
+.generating-overlay.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.generating-label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--clr-ink-muted);
+}
+
+/* Simple three-dot loading animation */
+.dots-loader {
+  display: flex;
+  gap: 6px;
+}
+.dots-loader span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--clr-accent);
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+.dots-loader span:nth-child(1) { animation-delay: 0s; }
+.dots-loader span:nth-child(2) { animation-delay: 0.2s; }
+.dots-loader span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.5; }
+  40%           { transform: scale(1.1); opacity: 1; }
+}

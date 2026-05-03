@@ -1,0 +1,295 @@
+/* ═══════════════════════════════════════════════
+   MINUTES.CSS — Minutes Document Styles
+═══════════════════════════════════════════════ */
+
+.minutes-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-6) var(--sp-8);
+}
+
+.minutes-paper {
+  background: var(--clr-white);
+  border: 1px solid var(--clr-rule);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-12) var(--sp-12);
+  max-width: 820px;
+  margin: 0 auto;
+  box-shadow: var(--shadow-md);
+  animation: doc-in 0.35s ease-out;
+}
+
+@keyframes doc-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Document header ── */
+.doc-header {
+  border-bottom: 2px solid var(--clr-ink);
+  padding-bottom: var(--sp-6);
+  margin-bottom: var(--sp-8);
+  position: relative;
+}
+
+.doc-header::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 0;
+  width: 48px;
+  height: 2px;
+  background: var(--clr-accent);
+  border-radius: 1px;
+}
+
+.doc-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--clr-ink-faint);
+  margin-bottom: var(--sp-2);
+}
+
+.doc-title {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 700;
+  font-style: italic;
+  letter-spacing: -0.03em;
+  color: var(--clr-ink);
+  line-height: 1.2;
+  margin-bottom: var(--sp-5);
+}
+
+.doc-meta-grid {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr;
+  gap: var(--sp-2) var(--sp-5);
+  align-items: baseline;
+}
+
+@media (max-width: 640px) {
+  .doc-meta-grid { grid-template-columns: auto 1fr; }
+}
+
+.doc-meta-label {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--clr-ink-faint);
+  white-space: nowrap;
+}
+
+.doc-meta-value {
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  color: var(--clr-ink-soft);
+}
+
+/* ── Sections ── */
+.doc-section {
+  margin-top: var(--sp-8);
+  page-break-inside: avoid;
+}
+
+.doc-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--clr-rule);
+}
+
+.doc-section-num {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: var(--clr-accent);
+  line-height: 1;
+  min-width: 24px;
+}
+
+.doc-section-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--clr-ink);
+}
+
+.doc-section-badge {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--clr-ink-faint);
+}
+
+/* ── Topic chips ── */
+.topic-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+}
+
+.topic-chip {
+  font-family: var(--font-jp);
+  font-size: 0.88rem;
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--clr-topic-bg);
+  color: var(--clr-topic);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(29,52,97,0.1);
+  font-weight: 400;
+}
+
+/* ── Bullet list ── */
+.doc-bullet-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.doc-bullet-list li {
+  position: relative;
+  padding: var(--sp-2) 0 var(--sp-2) var(--sp-6);
+  font-family: var(--font-jp);
+  font-size: 0.95rem;
+  line-height: 1.8;
+  color: var(--clr-ink-soft);
+  border-bottom: 1px solid var(--clr-rule-soft);
+}
+.doc-bullet-list li:last-child { border-bottom: none; }
+
+.doc-bullet-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14px;
+  width: 12px;
+  height: 1.5px;
+  background: var(--clr-ink-faint);
+  border-radius: 1px;
+}
+
+/* Decision list variant */
+.doc-bullet-list.decision li::before { background: var(--clr-decision); }
+.doc-bullet-list.decision li { color: var(--clr-ink); }
+.doc-bullet-list.decision strong {
+  background: var(--clr-decision-bg);
+  color: var(--clr-decision);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+/* ── ToDo Table ── */
+.todo-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--sp-2);
+  font-family: var(--font-body);
+  font-size: 0.86rem;
+}
+
+.todo-table th {
+  text-align: left;
+  padding: var(--sp-3) var(--sp-4);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--clr-ink-faint);
+  font-weight: 400;
+  border-bottom: 1.5px solid var(--clr-ink);
+}
+
+.todo-table td {
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--clr-rule-soft);
+  vertical-align: top;
+}
+
+.todo-table tr:hover td { background: var(--clr-paper-2); }
+
+.todo-task {
+  font-family: var(--font-jp);
+  font-size: 0.92rem;
+  color: var(--clr-ink);
+  font-weight: 500;
+}
+
+.todo-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.todo-badge.person {
+  background: var(--clr-topic-bg);
+  color: var(--clr-topic);
+}
+
+.todo-badge.deadline {
+  background: var(--clr-accent-light);
+  color: var(--clr-accent-dark);
+}
+
+.todo-badge.unset {
+  color: var(--clr-ink-faint);
+  font-style: italic;
+}
+
+/* ── Footer note ── */
+.doc-footnote {
+  margin-top: var(--sp-10);
+  padding-top: var(--sp-4);
+  border-top: 1px dashed var(--clr-rule);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--clr-ink-faint);
+  letter-spacing: 0.04em;
+  line-height: 1.7;
+}
+
+/* ── Highlighted text in minutes ── */
+.doc-hl-decision {
+  background: var(--clr-decision-bg);
+  color: var(--clr-decision);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+
+/* ── Empty state ── */
+.minutes-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+/* ── Print optimisation ── */
+@media print {
+  .minutes-paper {
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    border-radius: 0;
+    max-width: none;
+  }
+  .doc-section { page-break-inside: avoid; }
+  .todo-table { page-break-inside: avoid; }
+}
