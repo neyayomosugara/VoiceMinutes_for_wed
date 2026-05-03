@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════
-   SPEECH.JS — Web Speech API Wrapper
-   v2: Brave / Android対応、フォールバック実装
+   SPEECH.JS v3 — Mobile-first Web Speech API Wrapper
+   重要: Android Chromeは continuous: true をサポートしないため、
+   モバイルでは continuous: false + 自動再起動ロジックを採用
 ═══════════════════════════════════════════════ */
 
 const Speech = (() => {
@@ -9,6 +10,12 @@ const Speech = (() => {
   let isRunning   = false;
   let language    = 'ja-JP';
   let restartTimer = null;
+  let lastResultTime = 0;
+  let watchdogTimer = null;
+
+  /* Detect mobile device */
+  const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  const IS_IOS    = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
   const cb = {
     onResult:    () => {},
@@ -24,8 +31,6 @@ const Speech = (() => {
   function getSR() {
     return window.SpeechRecognition
         || window.webkitSpeechRecognition
-        || window.mozSpeechRecognition
-        || window.msSpeechRecognition
         || null;
   }
 
@@ -33,16 +38,30 @@ const Speech = (() => {
     return !!getSR();
   }
 
-  /* Check if running in Brave */
   function isBrave() {
     return !!(navigator.brave && navigator.brave.isBrave);
   }
 
-  /* ── Amplitude simulation via AudioContext ── */
+  function isMobile() { return IS_MOBILE; }
+  function isIOS()    { return IS_IOS; }
+
+  /* ── Amplitude monitor via AudioContext ── */
   let audioCtx = null, analyser = null, micStream = null, ampTimer = null;
 
-  async function startAmplitudeMonitor(stream) {
+  async function startAmplitudeMonitor() {
+    /* On mobile, getting the stream interferes with SpeechRecognition.
+       Skip AudioContext on mobile and use simulated amplitude during recognition. */
+    if (IS_MOBILE) {
+      ampTimer = setInterval(() => {
+        if (isRunning) cb.onAmplitude(0.25 + Math.random() * 0.5);
+        else cb.onAmplitude(0);
+      }, 120);
+      return;
+    }
+
+    /* Desktop: use real AudioContext */
     try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
@@ -58,10 +77,11 @@ const Speech = (() => {
         cb.onAmplitude(Math.min(1, avg * 3.5));
       }, 60);
     } catch (e) {
-      /* Fallback to random if AudioContext unavailable */
+      console.warn('AudioContext failed, falling back:', e);
       ampTimer = setInterval(() => {
-        cb.onAmplitude(isRunning ? 0.25 + Math.random() * 0.5 : 0);
-      }, 100);
+        if (isRunning) cb.onAmplitude(0.25 + Math.random() * 0.5);
+        else cb.onAmplitude(0);
+      }, 120);
     }
   }
 
@@ -69,39 +89,63 @@ const Speech = (() => {
     clearInterval(ampTimer);
     ampTimer = null;
     if (micStream) {
-      micStream.getTracks().forEach(t => t.stop());
+      try { micStream.getTracks().forEach(t => t.stop()); } catch (_) {}
       micStream = null;
     }
     if (audioCtx) {
-      audioCtx.close().catch(() => {});
+      try { audioCtx.close(); } catch (_) {}
       audioCtx = null;
     }
     cb.onAmplitude(0);
   }
 
-  /* ── Init recognition ── */
+  /* ── Mic permission probe (mobile-safe) ── */
+  async function probeMicPermission() {
+    /* Quickly request and release the mic to trigger the permission dialog.
+       On Android Chrome, this MUST happen before SpeechRecognition.start()
+       or the recognition will fail silently. */
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      throw err;
+    }
+    /* Release immediately — SpeechRecognition will reacquire its own */
+    stream.getTracks().forEach(t => t.stop());
+    /* Small delay to let the OS release the resource */
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  /* ── Init recognition object ── */
   function init() {
     const SR = getSR();
     if (!SR) return false;
 
     recognition = new SR();
     recognition.lang              = language;
-    recognition.continuous        = true;
+    /* CRITICAL: Android Chrome ignores continuous=true. We use one-shot + restart. */
+    recognition.continuous        = !IS_MOBILE;
     recognition.interimResults    = true;
     recognition.maxAlternatives   = 1;
 
     recognition.onstart = () => {
-      isRunning = true;
+      console.log('[Speech] onstart');
+      lastResultTime = Date.now();
       cb.onStart();
+      startWatchdog();
     };
 
     recognition.onresult = (e) => {
+      lastResultTime = Date.now();
       let interimText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const transcript = e.results[i][0].transcript;
         if (e.results[i].isFinal) {
           const text = transcript.trim();
-          if (text.length > 0) cb.onResult(text);
+          if (text.length > 0) {
+            console.log('[Speech] final:', text);
+            cb.onResult(text);
+          }
         } else {
           interimText += transcript;
         }
@@ -110,49 +154,40 @@ const Speech = (() => {
     };
 
     recognition.onerror = (e) => {
-      console.warn('SpeechRecognition error:', e.error);
+      console.warn('[Speech] error:', e.error);
 
-      /* Non-fatal errors — just restart */
-      if (e.error === 'no-speech' || e.error === 'audio-capture') {
-        if (isRunning) {
-          clearTimeout(restartTimer);
-          restartTimer = setTimeout(() => {
-            if (isRunning) tryRestart();
-          }, 300);
-        }
+      if (e.error === 'no-speech' || e.error === 'audio-capture' || e.error === 'aborted') {
+        /* Non-fatal — onend handler will restart */
         return;
       }
 
-      if (e.error === 'aborted') return; /* normal stop */
-
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         isRunning = false;
+        clearWatchdog();
         cb.onError('permission_denied');
         return;
       }
 
       if (e.error === 'network') {
+        isRunning = false;
+        clearWatchdog();
         cb.onError('network');
         return;
       }
 
-      /* Other errors: try restart once */
-      if (isRunning) {
-        clearTimeout(restartTimer);
-        restartTimer = setTimeout(() => {
-          if (isRunning) tryRestart();
-        }, 500);
-      }
+      /* Other errors: try to recover via onend */
     };
 
     recognition.onend = () => {
+      console.log('[Speech] onend, isRunning=', isRunning);
       if (isRunning) {
-        /* Auto-restart for continuous recording */
+        /* Restart for continuous behaviour (essential on mobile) */
         clearTimeout(restartTimer);
         restartTimer = setTimeout(() => {
-          if (isRunning) tryRestart();
-        }, 100);
+          if (isRunning) tryStart();
+        }, 250);
       } else {
+        clearWatchdog();
         cb.onStop();
       }
     };
@@ -160,69 +195,93 @@ const Speech = (() => {
     return true;
   }
 
-  function tryRestart() {
+  function tryStart() {
     if (!recognition || !isRunning) return;
     try {
       recognition.lang = language;
       recognition.start();
+      console.log('[Speech] restarted');
     } catch (e) {
-      /* Already started, ignore */
+      /* Already started, or in transition. Wait and retry once. */
+      console.warn('[Speech] start failed:', e.message);
+      setTimeout(() => {
+        if (isRunning && recognition) {
+          try { recognition.start(); } catch (_) {}
+        }
+      }, 400);
     }
+  }
+
+  /* ── Watchdog: detect silent failures on mobile ── */
+  function startWatchdog() {
+    clearWatchdog();
+    watchdogTimer = setInterval(() => {
+      if (!isRunning) {
+        clearWatchdog();
+        return;
+      }
+      const idle = Date.now() - lastResultTime;
+      /* If no result/event for 30 seconds, force-restart */
+      if (idle > 30000) {
+        console.warn('[Speech] watchdog: idle too long, force restart');
+        lastResultTime = Date.now();
+        try { recognition.abort(); } catch (_) {}
+      }
+    }, 5000);
+  }
+
+  function clearWatchdog() {
+    clearInterval(watchdogTimer);
+    watchdogTimer = null;
   }
 
   /* ── Public: start ── */
   async function start(lang) {
+    if (!getSR()) {
+      cb.onUnsupported();
+      throw Object.assign(new Error('SpeechRecognition not supported'), { name: 'NotSupportedError' });
+    }
+
     language = lang || language;
 
-    /* 1. Request microphone permission */
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (err) {
-      const name = err.name || '';
-      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-        throw Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' });
-      }
-      if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-        throw Object.assign(new Error('No mic'), { name: 'NotFoundError' });
-      }
-      throw err;
-    }
+    /* 1. Trigger permission dialog & release mic */
+    await probeMicPermission();
 
-    /* 2. Start amplitude monitor (keep stream alive for analysis) */
-    await startAmplitudeMonitor(stream);
-
-    /* 3. Init SpeechRecognition */
-    if (!getSR()) {
-      /* Browser doesn't support speech API (e.g. Brave with flag disabled) */
-      cb.onUnsupported();
-      stopAmplitudeMonitor();
-      throw Object.assign(new Error('SpeechRecognition not available'), { name: 'NotSupportedError' });
-    }
-
+    /* 2. Init if needed */
     if (!recognition) init();
 
-    recognition.lang = language;
+    /* 3. Start amplitude monitor (on desktop, gets its own stream) */
     isRunning = true;
+    startAmplitudeMonitor();
 
-    /* Small delay to let mic settle */
-    await new Promise(r => setTimeout(r, 150));
+    /* 4. Start recognition */
+    recognition.lang = language;
+    recognition.continuous = !IS_MOBILE;
 
     try {
       recognition.start();
     } catch (e) {
-      /* Already running */
+      /* Possibly already running — abort and retry */
+      console.warn('[Speech] initial start failed:', e.message);
+      try { recognition.abort(); } catch (_) {}
+      await new Promise(r => setTimeout(r, 300));
+      try { recognition.start(); } catch (e2) {
+        isRunning = false;
+        stopAmplitudeMonitor();
+        throw e2;
+      }
     }
   }
 
   /* ── Public: stop ── */
   function stop() {
+    console.log('[Speech] stop()');
     isRunning = false;
     clearTimeout(restartTimer);
+    clearWatchdog();
     stopAmplitudeMonitor();
     if (recognition) {
       try { recognition.abort(); } catch (_) {}
-      try { recognition.stop();  } catch (_) {}
     }
     cb.onStop();
   }
@@ -236,6 +295,9 @@ const Speech = (() => {
     if (cb[event] !== undefined) cb[event] = handler;
   }
 
-  return { isSupported, isBrave, start, stop, setLanguage, on };
+  return {
+    isSupported, isBrave, isMobile, isIOS,
+    start, stop, setLanguage, on,
+  };
 
 })();

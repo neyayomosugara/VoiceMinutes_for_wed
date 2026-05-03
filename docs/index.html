@@ -16,8 +16,25 @@
 
   <!-- External libs (CDN) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js"></script>
+  <!-- docx 7.8.2: last UMD/global version that works with <script> tag. v8+ is ESM-only. -->
+  <script src="https://unpkg.com/docx@7.8.2/build/index.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <!-- Verify libraries loaded successfully -->
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      const checks = {
+        jsPDF:      typeof window.jspdf !== 'undefined' && typeof window.jspdf.jsPDF === 'function',
+        docx:       typeof window.docx !== 'undefined',
+        FileSaver:  typeof window.saveAs === 'function',
+      };
+      window._libCheck = checks;
+      const missing = Object.entries(checks).filter(([_, ok]) => !ok).map(([k]) => k);
+      if (missing.length > 0) {
+        console.warn('Missing libraries:', missing.join(', '));
+      }
+    });
+  </script>
+
 
   <!-- App styles -->
   <link rel="stylesheet" href="css/base.css">

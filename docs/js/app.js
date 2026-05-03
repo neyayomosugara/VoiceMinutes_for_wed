@@ -89,21 +89,70 @@ const App = (() => {
     const supported = Speech.isSupported();
     state.speechSupported = supported;
 
-    const recordBtn = document.getElementById('recordBtn');
-
     if (!supported) {
-      /* Brave or Firefox: show clear warning, disable record */
-      if (recordBtn) {
-        recordBtn.disabled = false; /* keep enabled to show warning on tap */
-      }
-      showBraveWarning();
+      showBrowserWarning();
       return;
     }
 
+    /* iOS Safari has very limited support */
+    if (Speech.isIOS()) {
+      const ua = navigator.userAgent;
+      if (!/CriOS|EdgiOS/i.test(ua)) {
+        /* Safari iOS — limited */
+        Toast.show('iOS Safariは音声認識の対応が不安定です。Chrome iOSをお試しください。', 'info');
+      }
+    }
+
     if (Speech.isBrave()) {
-      Toast.show('Braveをお使いです。設定でWeb Speech APIを有効にしてください', 'info');
+      Toast.show('Braveの設定で「Googleサービスを使用」を有効にしてください', 'info');
+    }
+
+    if (Speech.isMobile()) {
+      console.log('[App] Mobile mode: continuous recognition will use auto-restart');
     }
   }
+
+  function showBrowserWarning() {
+    /* Insert a warning banner inline */
+    const waveform = document.querySelector('.waveform-container');
+    if (!waveform || document.getElementById('browserWarning')) return;
+
+    const isFirefox = /Firefox/i.test(navigator.userAgent);
+    const isSafari  = /Safari/i.test(navigator.userAgent) && !/Chrome|CriOS/i.test(navigator.userAgent);
+
+    let message;
+    if (Speech.isBrave()) {
+      message = `<strong>⚠️ 音声認識を有効にしてください</strong><br>
+        <strong>brave://settings/privacy</strong> → 「Googleサービスを使用」をオンにしてリロード`;
+    } else if (isFirefox) {
+      message = `<strong>⚠️ Firefoxは音声認識に未対応です</strong><br>
+        <strong>Chrome / Edge</strong> でアクセスしてください`;
+    } else if (isSafari) {
+      message = `<strong>⚠️ このSafariは音声認識に未対応です</strong><br>
+        <strong>Chrome / Edge</strong> でアクセスしてください`;
+    } else {
+      message = `<strong>⚠️ このブラウザは音声認識に未対応です</strong><br>
+        <strong>Chrome / Edge</strong> でアクセスしてください`;
+    }
+
+    const banner = document.createElement('div');
+    banner.id = 'browserWarning';
+    banner.style.cssText = `
+      margin: 8px var(--sp-8) 0;
+      padding: 12px 16px;
+      background: #fff8e1;
+      border: 1px solid #f0c040;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      line-height: 1.6;
+      color: #5a4000;
+    `;
+    banner.innerHTML = message + '<br><small style="opacity:0.7">（録音以外の機能はすべて使えます）</small>';
+    waveform.insertAdjacentElement('afterend', banner);
+  }
+
+  /* Backward compat alias */
+  function showBraveWarning() { showBrowserWarning(); }
 
   function showBraveWarning() {
     /* Insert an info banner below the waveform */
