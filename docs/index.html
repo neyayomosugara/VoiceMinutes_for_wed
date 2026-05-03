@@ -102,12 +102,28 @@
           </div>
         </div>
 
+        <!-- Notification area for banners (Whisper info, browser warnings) -->
+        <div id="notificationArea"></div>
+
         <!-- Waveform visualizer -->
         <div class="waveform-container">
           <canvas id="waveCanvas" class="waveform-canvas"></canvas>
           <div class="waveform-overlay">
             <span class="waveform-label" id="waveLabel">AUDIO INPUT / ja-JP</span>
             <span class="waveform-level" id="waveLevel">— dB</span>
+          </div>
+        </div>
+
+        <!-- Mobile-only: meta toggle bar -->
+        <div class="meta-toggle-bar">
+          <button class="meta-toggle-btn" onclick="App.toggleMeta()" aria-label="会議情報を表示/非表示">
+            <span class="meta-toggle-icon" id="metaToggleIcon">▾</span>
+            <span>会議情報</span>
+          </button>
+          <div class="mobile-rec-status">
+            <span class="status-dot" id="mobileStatusDot"></span>
+            <span id="mobileStatusText">待機中</span>
+            <span id="mobileTimer">00:00</span>
           </div>
         </div>
 

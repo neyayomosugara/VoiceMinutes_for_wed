@@ -66,6 +66,7 @@ const App = (() => {
     loadSettings();
     checkBrowserSupport();
     initDateTime();
+    initMetaToggle();
 
     /* Welcome modal */
     try {
@@ -82,6 +83,29 @@ const App = (() => {
       if (e.target.closest('.transcript-paper, .minutes-container, .settings-sections, .export-grid')) return;
       e.preventDefault();
     }, { passive: false });
+  }
+
+  /* ── Meta strip toggle (mobile) ── */
+  function initMetaToggle() {
+    if (window.innerWidth > 640) return;
+    const panel = document.getElementById('panel-record');
+    const icon  = document.getElementById('metaToggleIcon');
+    try {
+      const saved = localStorage.getItem('minutes_meta_collapsed');
+      /* Default: collapsed on mobile to maximize space */
+      const collapsed = saved !== '0';
+      if (collapsed && panel) panel.classList.add('meta-collapsed');
+      if (icon) icon.textContent = collapsed ? '▸' : '▾';
+    } catch (_) {}
+  }
+
+  function toggleMeta() {
+    const panel = document.getElementById('panel-record');
+    const icon  = document.getElementById('metaToggleIcon');
+    if (!panel) return;
+    const collapsed = panel.classList.toggle('meta-collapsed');
+    if (icon) icon.textContent = collapsed ? '▸' : '▾';
+    try { localStorage.setItem('minutes_meta_collapsed', collapsed ? '1' : '0'); } catch (_) {}
   }
 
   /* ── Browser support check ── */
@@ -114,44 +138,38 @@ const App = (() => {
   }
 
   function showWhisperInfo() {
-    const waveform = document.querySelector('.waveform-container');
-    if (!waveform || document.getElementById('whisperInfo')) return;
+    const area = document.getElementById('notificationArea');
+    if (!area || document.getElementById('whisperInfo')) return;
     const banner = document.createElement('div');
     banner.id = 'whisperInfo';
     banner.style.cssText = `
-      margin: 8px var(--sp-8, 16px) 0;
-      padding: 12px 16px;
+      margin: 6px var(--sp-8, 16px) 0;
+      padding: 10px 14px;
       background: #e8f5e9;
       border: 1px solid #66bb6a;
       border-radius: 4px;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       line-height: 1.6;
       color: #1b5e20;
     `;
     banner.innerHTML = `
       <strong>ℹ️ Whisper音声認識エンジンを使用</strong><br>
-      このブラウザはブラウザ標準の音声認識に対応していないため、
-      ローカルAIモデル（Whisper）を使用します。<br>
-      <strong>初回のみ</strong>モデルのダウンロードが必要です（約80MB）。
-      2回目以降はキャッシュから即時起動します。<br>
+      このブラウザは標準の音声認識に対応していないため、ローカルAIモデル（Whisper）を使用します。<br>
+      <strong>初回のみ</strong>モデルのダウンロードが必要です（約80MB）。2回目以降はキャッシュから即時起動します。<br>
       <small style="opacity:0.7">音声データはサーバーに送信されません。</small>
     `;
-    waveform.insertAdjacentElement('afterend', banner);
+    area.appendChild(banner);
   }
 
   function showBrowserWarning() {
-    /* Insert a warning banner inline */
-    const waveform = document.querySelector('.waveform-container');
-    if (!waveform || document.getElementById('browserWarning')) return;
+    const area = document.getElementById('notificationArea');
+    if (!area || document.getElementById('browserWarning')) return;
 
     const isFirefox = /Firefox/i.test(navigator.userAgent);
     const isSafari  = /Safari/i.test(navigator.userAgent) && !/Chrome|CriOS/i.test(navigator.userAgent);
 
     let message;
-    if (Speech.isBrave()) {
-      message = `<strong>⚠️ 音声認識を有効にしてください</strong><br>
-        <strong>brave://settings/privacy</strong> → 「Googleサービスを使用」をオンにしてリロード`;
-    } else if (isFirefox) {
+    if (isFirefox) {
       message = `<strong>⚠️ Firefoxは音声認識に未対応です</strong><br>
         <strong>Chrome / Edge</strong> でアクセスしてください`;
     } else if (isSafari) {
@@ -165,17 +183,17 @@ const App = (() => {
     const banner = document.createElement('div');
     banner.id = 'browserWarning';
     banner.style.cssText = `
-      margin: 8px var(--sp-8) 0;
-      padding: 12px 16px;
+      margin: 6px var(--sp-8, 16px) 0;
+      padding: 10px 14px;
       background: #fff8e1;
       border: 1px solid #f0c040;
       border-radius: 4px;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       line-height: 1.6;
       color: #5a4000;
     `;
     banner.innerHTML = message + '<br><small style="opacity:0.7">（録音以外の機能はすべて使えます）</small>';
-    waveform.insertAdjacentElement('afterend', banner);
+    area.appendChild(banner);
   }
 
   function showBraveWarning() { showBrowserWarning(); }

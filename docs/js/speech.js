@@ -1,9 +1,10 @@
 /* ═══════════════════════════════════════════════
-   SPEECH.JS v4 — Unified Speech Recognition
-   ・Primary:  Web Speech API (Chrome, Edge)
-   ・Fallback: WhisperEngine (Brave, Firefox, etc.)
-   ・Mobile fix: commits interim text in onend to avoid
-     silent result loss on Android Chrome
+   SPEECH.JS v5 — Unified Speech Recognition
+   Engine order:
+     1. Web Speech API  (Chrome, Edge — skipped on Brave)
+     2. WhisperEngine   (Brave, Firefox — jsdelivr CDN)
+   Mobile fix: commits interim text in onend so
+   Android Chrome silent-result loss is avoided.
 ═══════════════════════════════════════════════ */
 
 const Speech = (() => {
@@ -14,7 +15,7 @@ const Speech = (() => {
   let restartTimer = null;
   let lastResultTime = 0;
   let watchdogTimer  = null;
-  let lastInterim    = '';   /* mobile onend fix */
+  let lastInterim    = '';
   let usingWhisper   = false;
 
   const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
@@ -32,7 +33,14 @@ const Speech = (() => {
   };
 
   /* ── Feature detection ── */
+  function isBrave() { return !!(navigator.brave && navigator.brave.isBrave); }
+  function isMobile() { return IS_MOBILE; }
+  function isIOS()    { return IS_IOS; }
+
   function getSR() {
+    /* Brave has webkitSpeechRecognition but blocks Google's speech servers,
+       resulting in a 'network' error. Skip it and use Whisper instead. */
+    if (isBrave()) return null;
     return window.SpeechRecognition || window.webkitSpeechRecognition || null;
   }
 
@@ -43,12 +51,8 @@ const Speech = (() => {
       (typeof WhisperEngine !== 'undefined' && WhisperEngine.isSupported()));
   }
 
-  function isBrave() { return !!(navigator.brave && navigator.brave.isBrave); }
-  function isMobile() { return IS_MOBILE; }
-  function isIOS()    { return IS_IOS; }
-
-  /* ── Amplitude monitor (desktop only; mobile uses simulated) ── */
-  let audioCtx = null, analyser = null, micStream = null, ampTimer = null;
+  /* ── Amplitude monitor (desktop Web Speech path only) ── */
+  let audioCtx = null, micStream = null, ampTimer = null;
 
   async function startAmplitudeMonitor() {
     if (IS_MOBILE) {
@@ -60,15 +64,14 @@ const Speech = (() => {
     try {
       const s = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      analyser = audioCtx.createAnalyser();
+      const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
       audioCtx.createMediaStreamSource(s).connect(analyser);
       micStream = s;
       const data = new Uint8Array(analyser.frequencyBinCount);
       ampTimer = setInterval(() => {
         analyser.getByteFrequencyData(data);
-        const avg = data.reduce((a, v) => a + v, 0) / data.length / 255;
-        cb.onAmplitude(Math.min(1, avg * 3.5));
+        cb.onAmplitude(Math.min(1, data.reduce((a, v) => a + v, 0) / data.length / 255 * 3.5));
       }, 60);
     } catch (_) {
       ampTimer = setInterval(() => {
@@ -104,7 +107,6 @@ const Speech = (() => {
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
-      console.log('[Speech] onstart');
       lastResultTime = Date.now();
       cb.onStart();
       startWatchdog();
@@ -116,12 +118,9 @@ const Speech = (() => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) {
-          lastInterim = '';          /* clear pending interim */
+          lastInterim = '';
           const text = t.trim();
-          if (text.length > 0) {
-            console.log('[Speech] final:', text);
-            cb.onResult(text);
-          }
+          if (text.length > 0) cb.onResult(text);
         } else {
           interimText += t;
         }
@@ -142,10 +141,8 @@ const Speech = (() => {
     };
 
     recognition.onend = () => {
-      console.log('[Speech] onend, isRunning=', isRunning);
-
-      /* ── Mobile fix: Android Chrome sometimes fires onend without isFinal.
-            Commit any pending interim text so it isn't lost. ── */
+      /* Mobile fix: Android Chrome sometimes fires onend without isFinal.
+         Commit any pending interim text so utterances aren't silently lost. */
       if (IS_MOBILE && lastInterim.trim().length > 0) {
         const text = lastInterim.trim();
         lastInterim = '';
@@ -170,7 +167,6 @@ const Speech = (() => {
     try {
       recognition.lang = language;
       recognition.start();
-      console.log('[Speech] restarted');
     } catch (e) {
       console.warn('[Speech] start failed:', e.message);
       setTimeout(() => {
@@ -179,13 +175,13 @@ const Speech = (() => {
     }
   }
 
-  /* ── Watchdog: silent-failure recovery on mobile ── */
+  /* ── Watchdog ── */
   function startWatchdog() {
     clearWatchdog();
     watchdogTimer = setInterval(() => {
       if (!isRunning) { clearWatchdog(); return; }
       if (Date.now() - lastResultTime > 30000) {
-        console.warn('[Speech] watchdog: idle too long, force restart');
+        console.warn('[Speech] watchdog: force restart');
         lastResultTime = Date.now();
         try { recognition.abort(); } catch (_) {}
       }
@@ -195,13 +191,13 @@ const Speech = (() => {
 
   /* ── Whisper fallback: delegate all callbacks ── */
   function delegateToWhisper() {
-    WhisperEngine.on('onStart',        ()    => { isRunning = true; cb.onStart(); });
-    WhisperEngine.on('onResult',       text  => cb.onResult(text));
-    WhisperEngine.on('onPartial',      text  => cb.onPartial(text));
-    WhisperEngine.on('onStop',         ()    => { isRunning = false; cb.onStop(); });
-    WhisperEngine.on('onError',        code  => cb.onError(code));
-    WhisperEngine.on('onAmplitude',    val   => cb.onAmplitude(val));
-    WhisperEngine.on('onModelProgress',pct   => cb.onModelProgress(pct));
+    WhisperEngine.on('onStart',        ()   => { isRunning = true; cb.onStart(); });
+    WhisperEngine.on('onResult',       text => cb.onResult(text));
+    WhisperEngine.on('onPartial',      text => cb.onPartial(text));
+    WhisperEngine.on('onStop',         ()   => { isRunning = false; cb.onStop(); });
+    WhisperEngine.on('onError',        code => cb.onError(code));
+    WhisperEngine.on('onAmplitude',    val  => cb.onAmplitude(val));
+    WhisperEngine.on('onModelProgress',pct  => cb.onModelProgress(pct));
   }
 
   /* ── Public: start ── */
@@ -217,7 +213,7 @@ const Speech = (() => {
         return;
       }
       cb.onUnsupported();
-      throw Object.assign(new Error('SpeechRecognition not supported'), { name: 'NotSupportedError' });
+      throw Object.assign(new Error('No speech recognition available'), { name: 'NotSupportedError' });
     }
 
     usingWhisper = false;
@@ -226,9 +222,9 @@ const Speech = (() => {
 
     isRunning = true;
     startAmplitudeMonitor();
-
     recognition.lang       = language;
     recognition.continuous = !IS_MOBILE;
+
     try {
       recognition.start();
     } catch (e) {
@@ -247,7 +243,6 @@ const Speech = (() => {
 
   /* ── Public: stop ── */
   function stop() {
-    console.log('[Speech] stop()');
     isRunning   = false;
     lastInterim = '';
 

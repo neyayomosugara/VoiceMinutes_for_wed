@@ -1,16 +1,41 @@
 /* ═══════════════════════════════════════════════
-   WHISPER-WORKER.JS — Transformers.js inference worker
-   Runs as a Module Worker. Used when Web Speech API is unavailable.
+   WHISPER-WORKER.JS v2 — Multi-CDN fallback
+   CDN order: jsdelivr → unpkg → esm.sh
+   Runs as a Module Worker. Used when Web Speech API
+   is unavailable (Brave, Firefox, etc.).
 ═══════════════════════════════════════════════ */
 
-import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
-
-env.allowLocalModels  = false;
-env.useBrowserCache   = true;
+const CDNS = [
+  'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2',
+  'https://unpkg.com/@xenova/transformers@2.17.2',
+];
 
 let pipe = null;
 
-async function load() {
+async function loadLib() {
+  for (const cdn of CDNS) {
+    try {
+      const lib = await import(cdn);
+      console.log('[Whisper] loaded from:', cdn);
+      return lib;
+    } catch (e) {
+      console.warn('[Whisper] CDN failed:', cdn, e.message);
+    }
+  }
+  return null;
+}
+
+async function main() {
+  const lib = await loadLib();
+  if (!lib) {
+    self.postMessage({ type: 'error', message: 'すべてのCDNからTransformers.jsの読み込みに失敗しました' });
+    return;
+  }
+
+  const { pipeline, env } = lib;
+  env.allowLocalModels = false;
+  env.useBrowserCache  = true;
+
   try {
     pipe = await pipeline(
       'automatic-speech-recognition',
@@ -30,10 +55,10 @@ async function load() {
   }
 }
 
-load();
+main();
 
-/* Whisper hallucination patterns to suppress */
-const HALLUCINATION = /^(\s*|\.{2,}|ご視聴ありがとうございました[。.]*|字幕[はが].{0,20}|Thank you for watching\.?|Subtitles by .+)$/i;
+/* Whisper hallucination suppression */
+const HALLUCINATION = /^(\s*|\.{2,}|ご視聴ありがとうございました[。.]*|字幕[はが].{0,20}|Thank you for watching\.?|Subtitles by .+|翻訳:.+)$/i;
 
 self.onmessage = async ({ data }) => {
   if (data.type !== 'transcribe' || !pipe) return;

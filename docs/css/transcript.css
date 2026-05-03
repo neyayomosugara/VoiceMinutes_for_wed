@@ -1,14 +1,23 @@
 /* ═══════════════════════════════════════════════
-   TRANSCRIPT.CSS — Waveform, Transcript Paper
-   v2 — Mobile-first, recording button always visible
+   TRANSCRIPT.CSS — Record Panel Layout
+   v3: Flexbox-based, collapsible meta, always-
+   visible record button, inline editing
 ═══════════════════════════════════════════════ */
 
-/* ── Record panel layout: use grid for guaranteed button visibility ── */
+/* ── Record panel: flex column so any number of dynamic
+   children (notification banners, etc.) work correctly ── */
 #panel-record {
-  display: grid;
-  grid-template-rows: auto auto auto auto 1fr auto;
-  /* header / waveform / meta / stats / transcript / controls */
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+}
+
+/* ── Notification area (banners injected by app.js) ── */
+#notificationArea {
+  flex-shrink: 0;
+}
+#notificationArea:empty {
+  display: none;
 }
 
 /* ── Waveform ── */
@@ -54,6 +63,11 @@
   letter-spacing: 0.08em;
 }
 
+/* ── Meta toggle bar (mobile only) ── */
+.meta-toggle-bar {
+  display: none;
+}
+
 /* ── Session metadata strip ── */
 .session-meta-strip {
   display: flex;
@@ -61,6 +75,20 @@
   padding: var(--sp-3) var(--sp-8);
   border-bottom: 1px solid var(--clr-rule-soft);
   flex-shrink: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
+  max-height: 200px;
+  opacity: 1;
+}
+
+/* Collapsed state (toggled by JS adding class to #panel-record) */
+#panel-record.meta-collapsed .session-meta-strip {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+  pointer-events: none;
 }
 
 .meta-field {
@@ -121,13 +149,13 @@
 }
 
 .stat-spacer { flex: 1; }
-
 .search-wrap { display: flex; align-items: center; }
 
-/* ── Transcript area — fills remaining space ── */
+/* ── Transcript area — flex:1 fills remaining space ── */
 .transcript-wrap {
+  flex: 1;
   min-height: 0;
-  margin: var(--sp-2) var(--sp-8) var(--sp-2);
+  margin: var(--sp-2) var(--sp-8);
   border: 1px solid var(--clr-rule);
   border-radius: var(--radius-md);
   background: var(--clr-white);
@@ -184,6 +212,7 @@
   line-height: 1.85;
   color: var(--clr-ink-soft);
   font-feature-settings: "palt";
+  cursor: text;
 }
 
 .utterance-time {
@@ -238,7 +267,7 @@
 .utterance:hover .utterance-actions { display: flex; }
 
 .utterance-edit-btn {
-  width: 26px; height: 26px;
+  width: 28px; height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -246,17 +275,22 @@
   background: var(--clr-white);
   border: 1px solid var(--clr-rule);
   color: var(--clr-ink-faint);
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   cursor: pointer;
   transition: all var(--transition-fast);
   box-shadow: var(--shadow-xs);
 }
 .utterance-edit-btn:hover {
   background: var(--clr-paper-2);
-  color: var(--clr-ink);
-  border-color: var(--clr-ink-faint);
+  color: var(--clr-accent);
+  border-color: var(--clr-accent);
 }
+
+/* When editing: hide the rendered text */
 .utterance.editing .utterance-text { display: none; }
+.utterance.editing .utterance-time { display: none; }
+.utterance.editing .utterance-actions { display: none; }
+
 .utterance-edit-area {
   width: 100%;
   font-family: var(--font-jp);
@@ -272,6 +306,8 @@
   min-height: 56px;
   box-shadow: 0 0 0 3px rgba(181,57,30,0.08);
   margin-top: 2px;
+  display: block;
+  box-sizing: border-box;
 }
 
 /* ── RECORD CONTROLS — always pinned, never hidden ── */
@@ -283,7 +319,6 @@
   border-top: 1px solid var(--clr-rule-soft);
   background: var(--clr-paper);
   flex-shrink: 0;
-  /* Pinned at bottom of grid row */
   position: relative;
   z-index: 10;
 }
@@ -292,53 +327,110 @@
    MOBILE (≤ 640px)
 ════════════════ */
 @media (max-width: 640px) {
-  #panel-record {
-    /* Compact rows on mobile */
-    grid-template-rows: auto auto auto auto 1fr auto;
+
+  /* ── Meta toggle bar ── */
+  .meta-toggle-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px var(--sp-3);
+    background: var(--clr-paper-2);
+    border-bottom: 1px solid var(--clr-rule-soft);
+    flex-shrink: 0;
   }
 
+  .meta-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: transparent;
+    border: none;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--clr-ink-muted);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .meta-toggle-btn:active { background: var(--clr-rule-soft); }
+
+  .meta-toggle-icon {
+    display: inline-block;
+    font-size: 0.7rem;
+    transition: transform 0.2s ease;
+  }
+  #panel-record.meta-collapsed .meta-toggle-icon {
+    transform: rotate(-90deg);
+  }
+
+  /* Mobile status in toggle bar */
+  .mobile-rec-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--clr-sidebar-text);
+  }
+  .mobile-rec-status .status-dot {
+    width: 6px; height: 6px;
+  }
+
+  /* ── Waveform: smaller on mobile ── */
   .waveform-container {
-    margin: var(--sp-2) var(--sp-3) 0;
-    height: 36px;
+    margin: var(--sp-1) var(--sp-3) 0;
+    height: 32px;
   }
 
+  /* ── Session meta: collapsible ── */
   .session-meta-strip {
     padding: var(--sp-2) var(--sp-3);
     flex-wrap: wrap;
     gap: var(--sp-2) var(--sp-3);
+    max-height: 160px;
+  }
+  #panel-record.meta-collapsed .session-meta-strip {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
   }
   .meta-field {
     flex: none;
     width: calc(50% - var(--sp-2));
   }
   .meta-field:last-child { width: 100%; }
-  .meta-input { font-size: 0.95rem; padding: var(--sp-2) 0; }
+  .meta-input { font-size: 0.9rem; padding: var(--sp-1) 0; }
 
+  /* ── Stats bar ── */
   .stats-bar {
-    padding: var(--sp-2) var(--sp-3);
+    padding: var(--sp-1) var(--sp-3);
   }
-  .stat-val { font-size: 0.88rem; }
+  .stat-val { font-size: 0.82rem; }
   .stat-item { padding-right: var(--sp-3); }
   .stat-divider { margin-right: var(--sp-3); }
-  /* Hide search on mobile – too cramped */
   .search-wrap { display: none; }
 
+  /* ── Transcript ── */
   .transcript-wrap {
-    margin: var(--sp-2) var(--sp-3);
+    margin: var(--sp-1) var(--sp-3);
   }
   .transcript-paper {
-    padding: var(--sp-3) var(--sp-3) var(--sp-3) 36px;
+    padding: var(--sp-3) var(--sp-3) var(--sp-3) 32px;
   }
-  .transcript-paper::before { left: 26px; }
-  .utterance-num { left: -24px; font-size: 0.5rem; }
-  .utterance-text { font-size: 0.92rem; }
+  .transcript-paper::before { left: 22px; }
+  .utterance-num { left: -22px; font-size: 0.48rem; }
+  .utterance-text { font-size: 0.9rem; line-height: 1.7; }
 
-  /* Touch devices: always show edit button */
+  /* Touch: always show edit button */
   .utterance-actions { display: flex; }
 
-  /* ── Record controls: full width, prominent ── */
+  /* ── Record controls: always visible, above mobile nav ── */
   .record-controls {
-    padding: var(--sp-3) var(--sp-3) calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
+    padding: var(--sp-2) var(--sp-3) calc(var(--sp-2) + env(safe-area-inset-bottom, 0px));
     gap: var(--sp-2);
     background: var(--clr-white);
     border-top: 2px solid var(--clr-rule);
@@ -348,15 +440,16 @@
   .btn-record {
     flex: 1;
     min-width: 0;
-    padding: var(--sp-4) var(--sp-3);
-    font-size: 0.9rem;
+    padding: var(--sp-3) var(--sp-3);
+    font-size: 0.88rem;
     letter-spacing: 0.02em;
+    min-width: 0;
   }
 
   #generateBtn {
     flex-shrink: 0;
-    padding: var(--sp-4) var(--sp-3);
-    font-size: 0.8rem;
+    padding: var(--sp-3) var(--sp-3);
+    font-size: 0.78rem;
     white-space: nowrap;
   }
 }
