@@ -86,6 +86,7 @@ const App = (() => {
 
   /* ── Browser support check ── */
   function checkBrowserSupport() {
+    const hasNative = Speech.isNativeSupported();
     const supported = Speech.isSupported();
     state.speechSupported = supported;
 
@@ -94,22 +95,48 @@ const App = (() => {
       return;
     }
 
-    /* iOS Safari has very limited support */
+    if (!hasNative) {
+      /* Whisper fallback mode (Brave, Firefox, etc.) */
+      showWhisperInfo();
+      return;
+    }
+
     if (Speech.isIOS()) {
       const ua = navigator.userAgent;
       if (!/CriOS|EdgiOS/i.test(ua)) {
-        /* Safari iOS — limited */
         Toast.show('iOS Safariは音声認識の対応が不安定です。Chrome iOSをお試しください。', 'info');
       }
-    }
-
-    if (Speech.isBrave()) {
-      Toast.show('Braveの設定で「Googleサービスを使用」を有効にしてください', 'info');
     }
 
     if (Speech.isMobile()) {
       console.log('[App] Mobile mode: continuous recognition will use auto-restart');
     }
+  }
+
+  function showWhisperInfo() {
+    const waveform = document.querySelector('.waveform-container');
+    if (!waveform || document.getElementById('whisperInfo')) return;
+    const banner = document.createElement('div');
+    banner.id = 'whisperInfo';
+    banner.style.cssText = `
+      margin: 8px var(--sp-8, 16px) 0;
+      padding: 12px 16px;
+      background: #e8f5e9;
+      border: 1px solid #66bb6a;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      line-height: 1.6;
+      color: #1b5e20;
+    `;
+    banner.innerHTML = `
+      <strong>ℹ️ Whisper音声認識エンジンを使用</strong><br>
+      このブラウザはブラウザ標準の音声認識に対応していないため、
+      ローカルAIモデル（Whisper）を使用します。<br>
+      <strong>初回のみ</strong>モデルのダウンロードが必要です（約80MB）。
+      2回目以降はキャッシュから即時起動します。<br>
+      <small style="opacity:0.7">音声データはサーバーに送信されません。</small>
+    `;
+    waveform.insertAdjacentElement('afterend', banner);
   }
 
   function showBrowserWarning() {
@@ -151,35 +178,7 @@ const App = (() => {
     waveform.insertAdjacentElement('afterend', banner);
   }
 
-  /* Backward compat alias */
   function showBraveWarning() { showBrowserWarning(); }
-
-  function showBraveWarning() {
-    /* Insert an info banner below the waveform */
-    const waveform = document.querySelector('.waveform-container');
-    if (!waveform || document.getElementById('braveWarning')) return;
-
-    const banner = document.createElement('div');
-    banner.id = 'braveWarning';
-    banner.style.cssText = `
-      margin: 0 var(--sp-8);
-      padding: var(--sp-3) var(--sp-4);
-      background: #fff8e1;
-      border: 1px solid #f0c040;
-      border-radius: var(--radius-md);
-      font-size: 0.8rem;
-      line-height: 1.6;
-      color: #5a4000;
-    `;
-    banner.innerHTML = `
-      <strong>⚠️ 音声認識が利用できません</strong><br>
-      Brave ブラウザをご利用の場合は、<strong>brave://settings/privacy</strong> → 
-      「Google サービスを使用」を有効にしてページを再読み込みしてください。<br>
-      または <strong>Chrome / Edge</strong> をご利用ください。<br>
-      <small style="opacity:0.7">（文字起こし以外の機能はすべてご利用いただけます）</small>
-    `;
-    waveform.insertAdjacentElement('afterend', banner);
-  }
 
   /* ── Speech callbacks ── */
   function bindSpeechCallbacks() {
@@ -234,8 +233,16 @@ const App = (() => {
 
     Speech.on('onUnsupported', () => {
       state.speechSupported = false;
-      showBraveWarning();
+      showBrowserWarning();
       stopRecording();
+    });
+
+    Speech.on('onModelProgress', (pct) => {
+      if (pct < 100) {
+        setStatus('processing', `音声モデル読込中 ${pct}%`);
+      } else {
+        setStatus('live', '録音中');
+      }
     });
 
     /* Edit callback */
