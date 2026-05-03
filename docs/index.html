@@ -1,781 +1,400 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VoiceMinutes — 音声議事録</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne+Mono&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #050810;
-    --bg2: #0b0f1e;
-    --panel: rgba(12,17,35,0.85);
-    --border: rgba(0,210,255,0.12);
-    --border-hot: rgba(0,210,255,0.45);
-    --cyan: #00d4ff;
-    --cyan-dim: rgba(0,212,255,0.15);
-    --red: #ff3366;
-    --green: #06d6a0;
-    --yellow: #ffd166;
-    --purple: #7b2fff;
-    --text: #e8f0ff;
-    --text2: #6b7a99;
-    --text3: #2d3654;
-    --mono: 'Syne Mono', monospace;
-    --sans: 'Noto Sans JP', sans-serif;
-  }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minutes — AI音声議事録</title>
+  <meta name="description" content="ブラウザで完結する音声議事録アプリ。PDF・Word出力対応。">
 
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@300;400;500&family=Noto+Serif+JP:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-  html, body {
-    height: 100%;
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--sans);
-    overflow-x: hidden;
-  }
+  <!-- External libs (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
-  /* ── Noise texture overlay ── */
-  body::before {
-    content: '';
-    position: fixed; inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-    pointer-events: none; z-index: 0;
-  }
-
-  /* ── Grid background ── */
-  body::after {
-    content: '';
-    position: fixed; inset: 0;
-    background-image:
-      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
-    background-size: 40px 40px;
-    pointer-events: none; z-index: 0;
-  }
-
-  .app {
-    position: relative; z-index: 1;
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 24px 20px 60px;
-    min-height: 100vh;
-    display: flex; flex-direction: column; gap: 20px;
-  }
-
-  /* ── Header ── */
-  header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 20px 0 4px;
-    border-bottom: 1px solid var(--border);
-  }
-  .logo {
-    font-family: var(--mono);
-    font-size: 1.25rem;
-    color: var(--cyan);
-    letter-spacing: 0.08em;
-  }
-  .logo span { color: var(--text2); }
-  .status-pill {
-    font-family: var(--mono);
-    font-size: 0.7rem;
-    padding: 4px 12px;
-    border-radius: 20px;
-    border: 1px solid var(--border);
-    color: var(--text2);
-    display: flex; align-items: center; gap: 6px;
-    transition: all 0.3s;
-  }
-  .status-pill.listening { border-color: var(--red); color: var(--red); }
-  .status-pill.listening .dot { background: var(--red); animation: blink 1s infinite; }
-  .status-pill.processing { border-color: var(--yellow); color: var(--yellow); }
-  .status-pill .dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--text3);
-    transition: all 0.3s;
-  }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
-
-  /* ── Waveform Canvas ── */
-  .waveform-wrap {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 0;
-    overflow: hidden;
-    backdrop-filter: blur(12px);
-    position: relative;
-  }
-  .waveform-wrap canvas {
-    display: block;
-    width: 100%; height: 80px;
-  }
-  .waveform-label {
-    position: absolute; top: 8px; left: 14px;
-    font-family: var(--mono); font-size: 0.65rem;
-    color: var(--text3); letter-spacing: 0.1em;
-  }
-
-  /* ── Main layout ── */
-  .main-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-  }
-  @media(max-width:680px) { .main-grid { grid-template-columns: 1fr; } }
-
-  /* ── Panel ── */
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 18px;
-    backdrop-filter: blur(12px);
-    display: flex; flex-direction: column; gap: 12px;
-  }
-  .panel-title {
-    font-family: var(--mono);
-    font-size: 0.7rem;
-    color: var(--cyan);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .panel-title::after {
-    content: ''; flex: 1;
-    height: 1px; background: var(--border);
-  }
-
-  /* ── Transcript area ── */
-  .transcript-box {
-    flex: 1;
-    min-height: 200px;
-    max-height: 300px;
-    overflow-y: auto;
-    font-size: 0.92rem;
-    line-height: 1.8;
-    color: var(--text);
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
-  }
-  .transcript-box:empty::before {
-    content: '録音を開始すると、ここに日本語でリアルタイム表示されます...';
-    color: var(--text3);
-    font-style: italic;
-  }
-  .partial-text { color: var(--cyan); font-style: italic; opacity: 0.7; }
-
-  /* ── Minutes area ── */
-  .minutes-box {
-    flex: 1;
-    min-height: 200px;
-    max-height: 300px;
-    overflow-y: auto;
-    font-family: var(--mono);
-    font-size: 0.78rem;
-    line-height: 1.9;
-    color: var(--text);
-    white-space: pre-wrap;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
-  }
-  .minutes-box:empty::before {
-    content: '議事録を生成するとここに表示されます...';
-    color: var(--text3);
-    font-style: italic;
-    font-family: var(--sans);
-  }
-
-  /* ── Controls ── */
-  .controls {
-    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
-  }
-
-  /* ── Buttons ── */
-  .btn {
-    font-family: var(--mono);
-    font-size: 0.8rem;
-    letter-spacing: 0.06em;
-    padding: 10px 20px;
-    border-radius: 8px;
-    border: 1px solid;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex; align-items: center; gap: 8px;
-    white-space: nowrap;
-  }
-  .btn:active { transform: scale(0.97); }
-
-  .btn-record {
-    background: rgba(255,51,102,0.12);
-    border-color: var(--red);
-    color: var(--red);
-    flex: 1; justify-content: center;
-    font-size: 0.9rem; padding: 14px;
-  }
-  .btn-record:hover { background: rgba(255,51,102,0.22); }
-  .btn-record.active {
-    background: rgba(255,51,102,0.25);
-    box-shadow: 0 0 20px rgba(255,51,102,0.3);
-    animation: pulse-red 2s infinite;
-  }
-  @keyframes pulse-red {
-    0%,100%{ box-shadow: 0 0 20px rgba(255,51,102,0.3); }
-    50%{ box-shadow: 0 0 35px rgba(255,51,102,0.5); }
-  }
-
-  .btn-generate {
-    background: rgba(123,47,255,0.12);
-    border-color: var(--purple);
-    color: #b57fff;
-    flex: 1; justify-content: center;
-    font-size: 0.9rem; padding: 14px;
-  }
-  .btn-generate:hover { background: rgba(123,47,255,0.22); }
-  .btn-generate:disabled { opacity: 0.3; cursor: not-allowed; }
-
-  .btn-sm {
-    background: rgba(255,255,255,0.04);
-    border-color: var(--border);
-    color: var(--text2);
-    padding: 7px 14px;
-    font-size: 0.72rem;
-  }
-  .btn-sm:hover { border-color: var(--border-hot); color: var(--text); background: rgba(0,212,255,0.06); }
-
-  .btn-save {
-    border-color: rgba(6,214,160,0.4);
-    color: var(--green);
-    background: rgba(6,214,160,0.06);
-  }
-  .btn-save:hover { background: rgba(6,214,160,0.14); }
-
-  /* ── Mode toggle ── */
-  .mode-toggle {
-    display: flex; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
-  }
-  .mode-btn {
-    font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em;
-    padding: 6px 14px; cursor: pointer; border: none;
-    background: transparent; color: var(--text2);
-    transition: all 0.2s;
-  }
-  .mode-btn.active { background: var(--cyan-dim); color: var(--cyan); }
-  .mode-btn:hover:not(.active) { background: rgba(255,255,255,0.04); }
-
-  /* ── Stats bar ── */
-  .stats-bar {
-    display: flex; gap: 20px; flex-wrap: wrap;
-    font-family: var(--mono); font-size: 0.68rem;
-    color: var(--text3); padding: 10px 16px;
-    background: rgba(0,0,0,0.3);
-    border: 1px solid var(--border); border-radius: 8px;
-  }
-  .stat { display: flex; gap: 6px; align-items: center; }
-  .stat-val { color: var(--text2); }
-
-  /* ── Bottom full-width controls ── */
-  .bottom-controls {
-    display: flex; gap: 10px; flex-wrap: wrap;
-  }
-
-  /* ── Toast ── */
-  #toast {
-    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(80px);
-    background: rgba(6,214,160,0.15); border: 1px solid var(--green);
-    color: var(--green); font-family: var(--mono); font-size: 0.78rem;
-    padding: 10px 24px; border-radius: 8px;
-    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
-    z-index: 100; white-space: nowrap;
-  }
-  #toast.show { transform: translateX(-50%) translateY(0); }
-
-  /* Scrollbar styling */
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--border-hot); }
-</style>
+  <!-- App styles -->
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/transcript.css">
+  <link rel="stylesheet" href="css/minutes.css">
+  <link rel="stylesheet" href="css/modals.css">
 </head>
 <body>
-<div class="app">
 
-  <!-- Header -->
-  <header>
-    <div class="logo">VOICE<span>/</span>MINUTES</div>
-    <div class="status-pill" id="statusPill">
-      <span class="dot"></span>
-      <span id="statusText">待機中</span>
-    </div>
-  </header>
+  <!-- ── App Shell ── -->
+  <div class="app" id="app">
 
-  <!-- Waveform -->
-  <div class="waveform-wrap">
-    <div class="waveform-label">AUDIO INPUT</div>
-    <canvas id="waveCanvas"></canvas>
-  </div>
-
-  <!-- Stats -->
-  <div class="stats-bar">
-    <div class="stat">文字数 <span class="stat-val" id="charCount">0</span></div>
-    <div class="stat">発言数 <span class="stat-val" id="sentenceCount">0</span></div>
-    <div class="stat">経過時間 <span class="stat-val" id="elapsed">00:00</span></div>
-    <div class="stat">言語 <span class="stat-val">日本語 (ja-JP)</span></div>
-    <div class="stat" style="margin-left:auto">
-      <div class="mode-toggle">
-        <button class="mode-btn active" onclick="setMode('summary')" id="modeSummary">箇条書き</button>
-        <button class="mode-btn" onclick="setMode('structured')" id="modeStructured">構造化</button>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">M</div>
+        <div class="brand-text">
+          <span class="brand-name">Minutes</span>
+          <span class="brand-sub">議事録エディタ</span>
+        </div>
       </div>
-    </div>
-  </div>
 
-  <!-- Main grid -->
-  <div class="main-grid">
-    <!-- Transcript panel -->
-    <div class="panel">
-      <div class="panel-title">🎙 文字起こし</div>
-      <div class="transcript-box" id="transcriptBox"></div>
-      <div class="controls">
-        <button class="btn btn-sm" onclick="clearTranscript()">🗑 クリア</button>
-        <button class="btn btn-sm btn-save" onclick="saveTranscript()">💾 保存</button>
-        <button class="btn btn-sm" onclick="copyTranscript()">📋 コピー</button>
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-panel="record" onclick="switchPanel('record')">
+          <span class="nav-icon">◎</span>
+          <span class="nav-label">録音</span>
+        </button>
+        <button class="nav-item" data-panel="minutes" onclick="switchPanel('minutes')">
+          <span class="nav-icon">≡</span>
+          <span class="nav-label">議事録</span>
+        </button>
+        <button class="nav-item" data-panel="export" onclick="switchPanel('export')">
+          <span class="nav-icon">↗</span>
+          <span class="nav-label">出力</span>
+        </button>
+        <button class="nav-item" data-panel="settings" onclick="switchPanel('settings')">
+          <span class="nav-icon">⊙</span>
+          <span class="nav-label">設定</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-status">
+        <div class="status-indicator" id="globalStatus">
+          <span class="status-dot" id="statusDot"></span>
+          <span class="status-text" id="statusText">待機中</span>
+        </div>
+        <div class="timer-display" id="timerDisplay">00:00</div>
       </div>
-    </div>
+    </aside>
 
-    <!-- Minutes panel -->
-    <div class="panel">
-      <div class="panel-title">🤖 議事録 <span style="color:var(--text3);font-family:var(--sans);font-size:0.65rem;text-transform:none;letter-spacing:0">（オフライン処理）</span></div>
-      <div class="minutes-box" id="minutesBox"></div>
-      <div class="controls">
-        <button class="btn btn-sm" onclick="clearMinutes()">🗑 クリア</button>
-        <button class="btn btn-sm btn-save" onclick="saveMinutes()">💾 保存</button>
-        <button class="btn btn-sm" onclick="copyMinutes()">📋 コピー</button>
+    <!-- Main content area -->
+    <main class="main-content">
+
+      <!-- ══ PANEL: Record ══ -->
+      <div class="panel active" id="panel-record">
+        <div class="panel-header">
+          <div class="panel-title-block">
+            <h1 class="panel-title">録音 &amp; 文字起こし</h1>
+            <p class="panel-sub">マイクで話すと、日本語でリアルタイムに文字起こしされます</p>
+          </div>
+          <div class="panel-header-actions">
+            <button class="btn btn-ghost btn-sm" onclick="clearAll()" title="全データをクリア">クリア</button>
+          </div>
+        </div>
+
+        <!-- Waveform visualizer -->
+        <div class="waveform-container">
+          <canvas id="waveCanvas" class="waveform-canvas"></canvas>
+          <div class="waveform-overlay">
+            <span class="waveform-label" id="waveLabel">AUDIO INPUT / ja-JP</span>
+            <span class="waveform-level" id="waveLevel">— dB</span>
+          </div>
+        </div>
+
+        <!-- Session metadata (editable) -->
+        <div class="session-meta-strip">
+          <div class="meta-field">
+            <label class="meta-label">会議名</label>
+            <input class="meta-input" id="sessionTitle" placeholder="例：週次定例MTG" value="無題の会議">
+          </div>
+          <div class="meta-field">
+            <label class="meta-label">参加者</label>
+            <input class="meta-input" id="attendees" placeholder="例：田中部長, 佐藤さん, 鈴木主任">
+          </div>
+          <div class="meta-field">
+            <label class="meta-label">場所 / 形式</label>
+            <input class="meta-input" id="location" placeholder="例：第2会議室 / Zoom">
+          </div>
+        </div>
+
+        <!-- Stats bar -->
+        <div class="stats-bar">
+          <div class="stat-item">
+            <span class="stat-val" id="charCount">0</span>
+            <span class="stat-lbl">文字</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <span class="stat-val" id="uttCount">0</span>
+            <span class="stat-lbl">発言</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <span class="stat-val" id="wordCount">0</span>
+            <span class="stat-lbl">単語</span>
+          </div>
+          <div class="stat-spacer"></div>
+          <div class="search-wrap">
+            <input class="search-input" id="searchInput" placeholder="🔍  テキスト内検索..." oninput="App.filterTranscript(this.value)">
+          </div>
+        </div>
+
+        <!-- Transcript area -->
+        <div class="transcript-wrap">
+          <div class="transcript-paper" id="transcriptPaper">
+            <div class="transcript-empty" id="transcriptEmpty">
+              <div class="empty-icon">🎙</div>
+              <p>録音を開始すると、ここに発言がリアルタイムで記録されます</p>
+              <p class="empty-hint">スペースキーでも録音を開始できます</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Record controls -->
+        <div class="record-controls">
+          <button class="btn-record" id="recordBtn" onclick="App.toggleRecording()">
+            <span class="record-btn-icon" id="recordIcon"></span>
+            <span id="recordLabel">録音開始</span>
+          </button>
+          <button class="btn btn-secondary" id="generateBtn" onclick="switchPanel('minutes'); App.generateMinutes()" disabled>
+            議事録を生成 →
+          </button>
+        </div>
       </div>
+
+      <!-- ══ PANEL: Minutes ══ -->
+      <div class="panel" id="panel-minutes">
+        <div class="panel-header">
+          <div class="panel-title-block">
+            <h1 class="panel-title">議事録</h1>
+            <p class="panel-sub">文字起こしから自動生成された構造化議事録</p>
+          </div>
+          <div class="panel-header-actions">
+            <div class="mode-toggle-group">
+              <button class="mode-btn active" id="modeBtn-formal" onclick="App.setMode('formal')">詳細</button>
+              <button class="mode-btn" id="modeBtn-concise" onclick="App.setMode('concise')">簡潔</button>
+            </div>
+            <button class="btn btn-accent" onclick="App.generateMinutes()">再生成</button>
+          </div>
+        </div>
+
+        <div class="minutes-container" id="minutesContainer">
+          <div class="minutes-empty" id="minutesEmpty">
+            <div class="empty-icon">📋</div>
+            <p>録音タブで文字起こしを行い、「議事録を生成」を押してください</p>
+            <button class="btn btn-secondary" onclick="switchPanel('record')">← 録音タブへ</button>
+          </div>
+          <div class="minutes-paper" id="minutesPaper"></div>
+        </div>
+      </div>
+
+      <!-- ══ PANEL: Export ══ -->
+      <div class="panel" id="panel-export">
+        <div class="panel-header">
+          <div class="panel-title-block">
+            <h1 class="panel-title">出力 / エクスポート</h1>
+            <p class="panel-sub">議事録を各形式でダウンロード</p>
+          </div>
+        </div>
+
+        <div class="export-grid">
+
+          <div class="export-card export-card-pdf">
+            <div class="export-card-icon">PDF</div>
+            <div class="export-card-body">
+              <h3>PDF ファイル</h3>
+              <p>印刷・配布に最適。日本語フォント対応、ヘッダー・フッター付き。</p>
+              <div class="export-options">
+                <label class="option-row">
+                  <input type="checkbox" id="pdf-header" checked> ヘッダー・フッターを含める
+                </label>
+                <label class="option-row">
+                  <input type="checkbox" id="pdf-toc"> 目次を生成
+                </label>
+                <label class="option-row">
+                  <input type="checkbox" id="pdf-transcript"> 文字起こし全文を付録として追加
+                </label>
+              </div>
+              <button class="btn btn-export btn-pdf" onclick="Exporter.toPDF()">
+                <span>PDFをダウンロード</span>
+                <span class="btn-ext">.pdf</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="export-card export-card-word">
+            <div class="export-card-icon">W</div>
+            <div class="export-card-body">
+              <h3>Word ドキュメント</h3>
+              <p>編集可能な.docxファイル。スタイル・表・見出し階層付き。</p>
+              <div class="export-options">
+                <label class="option-row">
+                  <input type="checkbox" id="word-styles" checked> スタイルを適用
+                </label>
+                <label class="option-row">
+                  <input type="checkbox" id="word-transcript"> 文字起こし全文を含める
+                </label>
+              </div>
+              <button class="btn btn-export btn-word" onclick="Exporter.toWord()">
+                <span>Wordをダウンロード</span>
+                <span class="btn-ext">.docx</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="export-card export-card-md">
+            <div class="export-card-icon">MD</div>
+            <div class="export-card-body">
+              <h3>Markdown</h3>
+              <p>Notion・GitHub・Obsidianなど、各種ツールへ貼り付け可能。</p>
+              <button class="btn btn-export btn-md" onclick="Exporter.toMarkdown()">
+                <span>Markdownをダウンロード</span>
+                <span class="btn-ext">.md</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="export-card export-card-txt">
+            <div class="export-card-icon">TXT</div>
+            <div class="export-card-body">
+              <h3>プレーンテキスト</h3>
+              <p>メール・チャットへの貼り付けに最適なプレーン形式。</p>
+              <button class="btn btn-export btn-txt" onclick="Exporter.toText()">
+                <span>テキストをダウンロード</span>
+                <span class="btn-ext">.txt</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="export-card export-card-json">
+            <div class="export-card-icon">{}</div>
+            <div class="export-card-body">
+              <h3>JSON データ</h3>
+              <p>他システムへのデータ連携や、再インポートに使用できる構造化データ。</p>
+              <button class="btn btn-export btn-json" onclick="Exporter.toJSON()">
+                <span>JSONをダウンロード</span>
+                <span class="btn-ext">.json</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="export-card export-card-print">
+            <div class="export-card-icon">⎙</div>
+            <div class="export-card-body">
+              <h3>印刷プレビュー</h3>
+              <p>ブラウザの印刷ダイアログを開きます。A4縦・余白付きで最適化。</p>
+              <button class="btn btn-export btn-print" onclick="window.print()">
+                <span>印刷する</span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ══ PANEL: Settings ══ -->
+      <div class="panel" id="panel-settings">
+        <div class="panel-header">
+          <div class="panel-title-block">
+            <h1 class="panel-title">設定</h1>
+          </div>
+        </div>
+
+        <div class="settings-sections">
+
+          <section class="settings-section">
+            <h2 class="settings-section-title">音声認識</h2>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">言語</span>
+                <span class="setting-desc">音声認識に使用する言語</span>
+              </div>
+              <select class="setting-control" id="langSelect" onchange="App.setLanguage(this.value)">
+                <option value="ja-JP" selected>日本語 (ja-JP)</option>
+                <option value="en-US">English (en-US)</option>
+                <option value="zh-CN">中文 (zh-CN)</option>
+                <option value="ko-KR">한국어 (ko-KR)</option>
+              </select>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">フィラー除去</span>
+                <span class="setting-desc">「えー」「あのー」等を自動除去する</span>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="fillerRemoval" checked onchange="App.toggleFiller(this.checked)">
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">キーワードハイライト</span>
+                <span class="setting-desc">決定事項・ToDoを色分けして表示</span>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="highlightKw" checked>
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h2 class="settings-section-title">議事録スタイル</h2>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">デフォルトモード</span>
+              </div>
+              <select class="setting-control" id="defaultMode">
+                <option value="formal">詳細モード</option>
+                <option value="concise">簡潔モード</option>
+              </select>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">会社名 / 組織名</span>
+                <span class="setting-desc">PDF・Word出力のヘッダーに使用</span>
+              </div>
+              <input class="setting-input" id="orgName" placeholder="例：株式会社○○">
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">作成者名</span>
+              </div>
+              <input class="setting-input" id="authorName" placeholder="例：坂口 拓海">
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h2 class="settings-section-title">ショートカット</h2>
+            <div class="shortcut-list">
+              <div class="shortcut-row"><kbd>Space</kbd> 録音 開始 / 停止</div>
+              <div class="shortcut-row"><kbd>⌘</kbd>+<kbd>Enter</kbd> 議事録を生成</div>
+              <div class="shortcut-row"><kbd>⌘</kbd>+<kbd>P</kbd> 印刷</div>
+              <div class="shortcut-row"><kbd>⌘</kbd>+<kbd>S</kbd> PDFを保存</div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ── Welcome Modal ── -->
+  <div class="modal-overlay" id="welcomeModal">
+    <div class="modal welcome-modal">
+      <div class="modal-brand">Minutes</div>
+      <h2>はじめに</h2>
+      <p>会議の音声をリアルタイムで文字起こしし、AI解析で議事録を自動生成します。<br>PDF・Word形式での出力に対応しています。</p>
+      <ul class="modal-steps">
+        <li><span>1</span>「録音開始」を押してマイクを許可する</li>
+        <li><span>2</span>会議中に話す（日本語で自動認識）</li>
+        <li><span>3</span>「議事録を生成」で構造化された議事録を作成</li>
+        <li><span>4</span>「出力」タブからPDF・Wordでダウンロード</li>
+      </ul>
+      <button class="btn btn-accent" onclick="closeWelcome()" style="width:100%">はじめる</button>
+      <p class="modal-note">すべての処理はブラウザ内で完結します。音声データは外部に送信されません。</p>
     </div>
   </div>
 
-  <!-- Main action buttons -->
-  <div class="bottom-controls">
-    <button class="btn btn-record" id="recordBtn" onclick="toggleRecording()">
-      <span id="recordIcon">⏺</span>
-      <span id="recordLabel">録音開始</span>
-    </button>
-    <button class="btn btn-generate" id="generateBtn" onclick="generateMinutes()" disabled>
-      ✨ 議事録を生成
-    </button>
-  </div>
+  <!-- ── Toast container ── -->
+  <div class="toast-stack" id="toastStack"></div>
 
-</div>
-
-<!-- Toast -->
-<div id="toast"></div>
-
-<script>
-// ═══════════════════════════════════════════════════════════
-//  STATE
-// ═══════════════════════════════════════════════════════════
-let recognition = null;
-let isRecording = false;
-let fullText = '';
-let partialNode = null;
-let startTime = null;
-let timerInterval = null;
-let currentMode = 'summary';
-let animFrame = null;
-let amplitudeLevel = 0;
-let bars = new Float32Array(48).fill(0.05);
-
-// ═══════════════════════════════════════════════════════════
-//  WAVEFORM CANVAS
-// ═══════════════════════════════════════════════════════════
-const canvas = document.getElementById('waveCanvas');
-const ctx = canvas.getContext('2d');
-
-function resizeCanvas() {
-  canvas.width = canvas.offsetWidth * devicePixelRatio;
-  canvas.height = canvas.offsetHeight * devicePixelRatio;
-}
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
-
-function drawWaveform() {
-  animFrame = requestAnimationFrame(drawWaveform);
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-
-  const count = bars.length;
-  const barW = W / count * 0.55;
-  const gap  = W / count * 0.45;
-
-  for (let i = 0; i < count; i++) {
-    // Animate toward target
-    const target = isRecording
-      ? amplitudeLevel * (0.3 + 0.7 * Math.abs(Math.sin(Date.now() * 0.003 + i * 0.5)))
-      : 0.04 + 0.02 * Math.abs(Math.sin(Date.now() * 0.001 + i * 0.3));
-    bars[i] += (target - bars[i]) * (isRecording ? 0.35 : 0.06);
-    bars[i] = Math.max(0.02, Math.min(1, bars[i]));
-
-    const x = i * (barW + gap);
-    const bh = bars[i] * H * 0.88;
-    const y = (H - bh) / 2;
-
-    const grad = ctx.createLinearGradient(x, y, x, y + bh);
-    if (isRecording) {
-      grad.addColorStop(0, `rgba(255,51,102,${0.3 + bars[i]*0.6})`);
-      grad.addColorStop(0.5, `rgba(0,212,255,${0.5 + bars[i]*0.4})`);
-      grad.addColorStop(1, `rgba(123,47,255,${0.3 + bars[i]*0.6})`);
-    } else {
-      grad.addColorStop(0, `rgba(0,212,255,0.08)`);
-      grad.addColorStop(1, `rgba(0,212,255,0.03)`);
-    }
-    ctx.fillStyle = grad;
-    const r = barW / 2;
-    ctx.beginPath();
-    ctx.roundRect(x, y, barW, bh, r);
-    ctx.fill();
-  }
-}
-drawWaveform();
-
-// ═══════════════════════════════════════════════════════════
-//  TIMER
-// ═══════════════════════════════════════════════════════════
-function startTimer() {
-  startTime = Date.now();
-  timerInterval = setInterval(() => {
-    const s = Math.floor((Date.now() - startTime) / 1000);
-    const m = Math.floor(s / 60).toString().padStart(2,'0');
-    const ss = (s % 60).toString().padStart(2,'0');
-    document.getElementById('elapsed').textContent = `${m}:${ss}`;
-  }, 500);
-}
-function stopTimer() {
-  clearInterval(timerInterval);
-}
-
-// ═══════════════════════════════════════════════════════════
-//  SPEECH RECOGNITION
-// ═══════════════════════════════════════════════════════════
-function initRecognition() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    showToast('⚠️ このブラウザは音声認識に未対応です（Chrome推奨）', 'warn');
-    return false;
-  }
-
-  recognition = new SpeechRecognition();
-  recognition.lang = 'ja-JP';
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.maxAlternatives = 1;
-
-  recognition.onstart = () => {
-    setStatus('listening', '録音中');
-    amplitudeLevel = 0.4;
-  };
-
-  recognition.onresult = (e) => {
-    amplitudeLevel = 0.3 + Math.random() * 0.5;
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) {
-        if (fullText && !fullText.endsWith('\n')) fullText += '\n';
-        fullText += t;
-        updateStats();
-        renderTranscript();
-        document.getElementById('generateBtn').disabled = false;
-      } else {
-        interim = t;
-      }
-    }
-    if (partialNode) partialNode.remove();
-    if (interim) {
-      partialNode = document.createElement('span');
-      partialNode.className = 'partial-text';
-      partialNode.textContent = interim;
-      document.getElementById('transcriptBox').appendChild(partialNode);
-    }
-    document.getElementById('transcriptBox').scrollTop = 9999;
-  };
-
-  recognition.onerror = (e) => {
-    if (e.error === 'no-speech' || e.error === 'audio-capture') return;
-    if (e.error === 'not-allowed') {
-      showToast('🚫 マイクのアクセスが拒否されました', 'warn');
-      stopRecording();
-    }
-  };
-
-  recognition.onend = () => {
-    if (isRecording) {
-      try { recognition.start(); } catch(e){}
-    } else {
-      setStatus('idle', '待機中');
-      amplitudeLevel = 0;
-    }
-  };
-  return true;
-}
-
-function toggleRecording() {
-  if (isRecording) {
-    stopRecording();
-  } else {
-    startRecording();
-  }
-}
-
-function startRecording() {
-  if (!recognition && !initRecognition()) return;
-
-  // 明示的にマイク許可ダイアログを表示してから録音開始
-  setStatus('processing', 'マイク許可を確認中...');
-  navigator.mediaDevices.getUserMedia({ audio: true })
-    .then(stream => {
-      // 許可取得後すぐにトラックを解放（SpeechRecognizer が自前で管理するため）
-      stream.getTracks().forEach(t => t.stop());
-
-      isRecording = true;
-      recognition.start();
-      startTimer();
-
-      const btn = document.getElementById('recordBtn');
-      btn.classList.add('active');
-      document.getElementById('recordIcon').textContent = '⏹';
-      document.getElementById('recordLabel').textContent = '録音停止';
-    })
-    .catch(err => {
-      setStatus('idle', '待機中');
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        showToast('🚫 マイクのアクセスが拒否されました。ブラウザの設定から許可してください。');
-      } else if (err.name === 'NotFoundError') {
-        showToast('⚠️ マイクが見つかりません。接続を確認してください。');
-      } else {
-        showToast('⚠️ マイクへのアクセスに失敗しました: ' + err.message);
-      }
-    });
-}
-
-function stopRecording() {
-  isRecording = false;
-  if (recognition) recognition.stop();
-  stopTimer();
-  amplitudeLevel = 0;
-
-  const btn = document.getElementById('recordBtn');
-  btn.classList.remove('active');
-  document.getElementById('recordIcon').textContent = '⏺';
-  document.getElementById('recordLabel').textContent = '録音開始';
-  setStatus('idle', '待機中');
-  if (partialNode) { partialNode.remove(); partialNode = null; }
-}
-
-// ═══════════════════════════════════════════════════════════
-//  RENDER & STATS
-// ═══════════════════════════════════════════════════════════
-function renderTranscript() {
-  const box = document.getElementById('transcriptBox');
-  const lines = fullText.split('\n').filter(l => l.trim());
-  box.innerHTML = lines.map(l => `<div>${escHtml(l)}</div>`).join('');
-}
-
-function updateStats() {
-  document.getElementById('charCount').textContent = fullText.replace(/\n/g,'').length;
-  document.getElementById('sentenceCount').textContent = fullText.split('\n').filter(l=>l.trim()).length;
-}
-
-function escHtml(t) {
-  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-// ═══════════════════════════════════════════════════════════
-//  STATUS
-// ═══════════════════════════════════════════════════════════
-function setStatus(type, text) {
-  const pill = document.getElementById('statusPill');
-  pill.className = 'status-pill ' + type;
-  document.getElementById('statusText').textContent = text;
-}
-
-// ═══════════════════════════════════════════════════════════
-//  MODE
-// ═══════════════════════════════════════════════════════════
-function setMode(mode) {
-  currentMode = mode;
-  document.getElementById('modeSummary').classList.toggle('active', mode === 'summary');
-  document.getElementById('modeStructured').classList.toggle('active', mode === 'structured');
-}
-
-// ═══════════════════════════════════════════════════════════
-//  OFFLINE NLP ENGINE
-// ═══════════════════════════════════════════════════════════
-function generateMinutes() {
-  if (!fullText.trim()) { showToast('テキストがありません'); return; }
-  setStatus('processing', '解析中...');
-  const btn = document.getElementById('generateBtn');
-  btn.disabled = true; btn.textContent = '⚙️ 処理中...';
-
-  setTimeout(() => {
-    const result = currentMode === 'summary' ? buildSummary(fullText) : buildStructured(fullText);
-    document.getElementById('minutesBox').textContent = result;
-    btn.disabled = false; btn.innerHTML = '✨ 議事録を生成';
-    setStatus('idle', '待機中');
-    showToast('✅ 議事録を生成しました（オフライン）');
-  }, 400);
-}
-
-function splitSentences(text) {
-  return text.replace(/\n/g,'。')
-    .split(/[。！？.!?]+/)
-    .map(s => s.trim())
-    .filter(s => s.length >= 6);
-}
-
-const KW_IMPORTANCE = ['について','重要','必要','課題','問題','提案','計画','方針','目標',
-  '予定','対応','検討','確認','報告','共有','実施','進捗','状況','結果','成果','影響','リスク','改善'];
-const KW_DECISION   = ['決定','決まり','決めた','合意','承認','採用','することにした','になった','とする','こととした','方向で','採択'];
-const KW_TODO       = ['してください','お願い','担当','対応','確認','調査','作成','準備','実施','送って','連絡','報告','提出','する予定','やること'];
-const KW_TOPIC      = ['について','に関する','の件','の話','テーマ','議題','話題','アジェンダ'];
-const FILLERS       = ['えー','えーと','あのー','あの','まあ','そうですね','なんか','ちょっと','やっぱり'];
-
-function normalize(text) {
-  let t = text;
-  FILLERS.forEach(f => { t = t.split(f).join(''); });
-  return t.replace(/だよ$/, 'です').replace(/じゃん/, 'ではないでしょうか').replace(/〜/g,'').trim();
-}
-
-function scoreImportance(s) {
-  return KW_IMPORTANCE.filter(w => s.includes(w)).length + (s.length > 10 && s.length < 60 ? 1 : 0);
-}
-
-function now() {
-  const d = new Date();
-  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-}
-
-function buildSummary(text) {
-  const sentences = splitSentences(text);
-  const scored = sentences.map(s => [normalize(s), scoreImportance(s)])
-    .filter(([,sc]) => sc > 0)
-    .sort((a,b) => b[1]-a[1]).slice(0,8).map(([s]) => s);
-  const points = scored.length > 0 ? scored : sentences.slice(0,5).map(normalize);
-  const summary = normalize(sentences.sort((a,b) => b.length-a.length)[0] || '（内容なし）');
-
-  return [
-    `# 📋 議事録`,
-    `作成日時: ${now()}`,
-    `生成方式: オフライン解析 (Web Speech API)`,
-    ``,
-    `${'─'.repeat(40)}`,
-    ``,
-    `## 📌 主な内容`,
-    ...points.map(p => `  • ${p}`),
-    ``,
-    `## 💬 まとめ`,
-    `  ${summary.length > 80 ? summary.slice(0,80)+'…' : summary}`,
-    ``,
-    `${'─'.repeat(40)}`,
-    `発言数: ${sentences.length}文 / 文字数: ${text.replace(/\n/g,'').length}字`,
-  ].join('\n');
-}
-
-function buildStructured(text) {
-  const sentences = splitSentences(text);
-  const topics    = sentences.filter(s => KW_TOPIC.some(w => s.includes(w))).slice(0,5).map(normalize);
-  const decisions = sentences.filter(s => KW_DECISION.some(w => s.includes(w))).slice(0,6).map(normalize);
-  const todos     = sentences.filter(s => KW_TODO.some(w => s.includes(w))).slice(0,8).map(normalize);
-  const usedSet   = new Set([...decisions,...todos]);
-  const others    = sentences.map(normalize).filter(s => !usedSet.has(s) && s.length >= 8).slice(0,4);
-
-  const personRe   = /([ぁ-んァ-ン一-龯]{2,6})(さん|部長|課長|担当|氏|様)/;
-  const deadlineRe = /(\d+月\d+日|今週|来週|今月|来月|明日|明後日|\d+日以内|\d+日まで)/;
-
-  const todoRows = todos.length === 0
-    ? `  | （なし） | ─ | ─ |`
-    : todos.map(t => {
-        const p = (t.match(personRe)||['','─'])[0] || '─';
-        const d = (t.match(deadlineRe)||['─'])[0] || '─';
-        return `  | ${t.slice(0,30)} | ${p} | ${d} |`;
-      }).join('\n');
-
-  return [
-    `# 📋 構造化議事録`,
-    `作成日時: ${now()}`,
-    `生成方式: オフライン解析 (Web Speech API)`,
-    ``,
-    `${'─'.repeat(40)}`,
-    ``,
-    `## 📋 議題・トピック`,
-    topics.length > 0 ? topics.map(t=>`  • ${t}`).join('\n') : '  • （自動検出なし）',
-    ``,
-    `## ✅ 決定事項`,
-    decisions.length > 0 ? decisions.map(d=>`  • ${d}`).join('\n') : '  • （決定事項なし）',
-    ``,
-    `## 📌 アクションアイテム`,
-    `  | タスク | 担当 | 期限 |`,
-    `  |--------|------|------|`,
-    todoRows,
-    ``,
-    `## 💬 備考・その他`,
-    others.length > 0 ? others.map(o=>`  • ${o}`).join('\n') : '  • （なし）',
-    ``,
-    `${'─'.repeat(40)}`,
-    `発言数: ${sentences.length}文 / 文字数: ${text.replace(/\n/g,'').length}字`,
-  ].join('\n');
-}
-
-// ═══════════════════════════════════════════════════════════
-//  SAVE / COPY / CLEAR
-// ═══════════════════════════════════════════════════════════
-function saveTranscript() {
-  if (!fullText.trim()) { showToast('テキストがありません'); return; }
-  download(`transcription_${timestamp()}.txt`, fullText);
-  showToast('💾 文字起こしを保存しました');
-}
-function saveMinutes() {
-  const txt = document.getElementById('minutesBox').textContent;
-  if (!txt.trim()) { showToast('議事録がありません'); return; }
-  download(`minutes_${timestamp()}.txt`, txt);
-  showToast('💾 議事録を保存しました');
-}
-function copyTranscript() {
-  if (!fullText.trim()) { showToast('テキストがありません'); return; }
-  navigator.clipboard.writeText(fullText).then(() => showToast('📋 コピーしました'));
-}
-function copyMinutes() {
-  const txt = document.getElementById('minutesBox').textContent;
-  if (!txt.trim()) { showToast('議事録がありません'); return; }
-  navigator.clipboard.writeText(txt).then(() => showToast('📋 コピーしました'));
-}
-function clearTranscript() {
-  fullText = ''; renderTranscript(); updateStats();
-  document.getElementById('generateBtn').disabled = true;
-  showToast('🗑 テキストをクリアしました');
-}
-function clearMinutes() {
-  document.getElementById('minutesBox').textContent = '';
-  showToast('🗑 議事録をクリアしました');
-}
-function download(name, content) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([content], {type:'text/plain;charset=utf-8'}));
-  a.download = name; a.click();
-}
-function timestamp() {
-  return new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
-}
-
-// ═══════════════════════════════════════════════════════════
-//  TOAST
-// ═══════════════════════════════════════════════════════════
-let toastTimer = null;
-function showToast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg; el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
-}
-</script>
+  <!-- App scripts -->
+  <script src="js/nlp.js"></script>
+  <script src="js/speech.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/exporter.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
