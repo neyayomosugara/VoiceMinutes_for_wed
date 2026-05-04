@@ -66,7 +66,7 @@ const App = (() => {
     loadSettings();
     checkBrowserSupport();
     initDateTime();
-    initMetaToggle();
+    initToolbarToggle();
 
     /* Welcome modal */
     try {
@@ -85,27 +85,29 @@ const App = (() => {
     }, { passive: false });
   }
 
-  /* ── Meta strip toggle (mobile) ── */
-  function initMetaToggle() {
+  /* ── Toolbar drawer toggle (mobile) ── */
+  function initToolbarToggle() {
     if (window.innerWidth > 640) return;
     const panel = document.getElementById('panel-record');
-    const icon  = document.getElementById('metaToggleIcon');
     try {
-      const saved = localStorage.getItem('minutes_meta_collapsed');
-      /* Default: collapsed on mobile to maximize space */
-      const collapsed = saved !== '0';
-      if (collapsed && panel) panel.classList.add('meta-collapsed');
-      if (icon) icon.textContent = collapsed ? '▸' : '▾';
+      /* Default: collapsed — toolbar auto-hides on mobile */
+      const open = localStorage.getItem('minutes_toolbar_open') === '1';
+      if (open && panel) panel.classList.add('toolbar-open');
+      updateToolbarIcon(open);
     } catch (_) {}
   }
 
-  function toggleMeta() {
+  function toggleToolbar() {
     const panel = document.getElementById('panel-record');
-    const icon  = document.getElementById('metaToggleIcon');
     if (!panel) return;
-    const collapsed = panel.classList.toggle('meta-collapsed');
-    if (icon) icon.textContent = collapsed ? '▸' : '▾';
-    try { localStorage.setItem('minutes_meta_collapsed', collapsed ? '1' : '0'); } catch (_) {}
+    const open = panel.classList.toggle('toolbar-open');
+    updateToolbarIcon(open);
+    try { localStorage.setItem('minutes_toolbar_open', open ? '1' : '0'); } catch (_) {}
+  }
+
+  function updateToolbarIcon(open) {
+    const icon = document.getElementById('toolbarToggleIcon');
+    if (icon) icon.textContent = open ? '▼' : '▲';
   }
 
   /* ── Browser support check ── */
@@ -423,6 +425,16 @@ const App = (() => {
     Toast.show('議事録を生成しました ✓');
   }
 
+  /* ── Print minutes ── */
+  function printMinutes() {
+    if (!window._minutesData) {
+      Toast.show('まず議事録を生成してください', 'error');
+      return;
+    }
+    switchPanel('minutes');
+    setTimeout(() => window.print(), 150);
+  }
+
   /* ── Filter transcript ── */
   function filterTranscript(query) {
     state.searchQuery = query;
@@ -549,7 +561,8 @@ const App = (() => {
   /* ── Public API ── */
   return {
     init, toggleRecording, generateMinutes,
-    filterTranscript, setMode, setLanguage, clearAll, toggleMeta,
+    filterTranscript, setMode, setLanguage, clearAll,
+    toggleToolbar, printMinutes,
     get isRecording() { return state.isRecording; },
   };
 

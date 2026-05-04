@@ -63,9 +63,14 @@
   letter-spacing: 0.08em;
 }
 
-/* ── Meta toggle bar (mobile only) ── */
-.meta-toggle-bar {
-  display: none;
+/* ── Toolbar toggle row (mobile only, always visible) ── */
+.toolbar-toggle-row { display: none; }
+
+/* ── Toolbar drawer (contains waveform + meta + stats) ── */
+.toolbar-drawer {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
 }
 
 /* ── Session metadata strip ── */
@@ -75,21 +80,8 @@
   padding: var(--sp-3) var(--sp-8);
   border-bottom: 1px solid var(--clr-rule-soft);
   flex-shrink: 0;
-  overflow: hidden;
-  transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
-  max-height: 200px;
-  opacity: 1;
 }
 
-/* Collapsed state (toggled by JS adding class to #panel-record) */
-#panel-record.meta-collapsed .session-meta-strip {
-  max-height: 0;
-  opacity: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-bottom: none;
-  pointer-events: none;
-}
 
 .meta-field {
   display: flex;
@@ -328,8 +320,8 @@
 ════════════════ */
 @media (max-width: 640px) {
 
-  /* ── Meta toggle bar ── */
-  .meta-toggle-bar {
+  /* ── Toolbar toggle row (always visible on mobile) ── */
+  .toolbar-toggle-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -339,45 +331,55 @@
     flex-shrink: 0;
   }
 
-  .meta-toggle-btn {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    background: transparent;
-    border: none;
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--clr-ink-muted);
-    cursor: pointer;
-    padding: 4px 6px;
-    border-radius: var(--radius-sm);
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-  }
-  .meta-toggle-btn:active { background: var(--clr-rule-soft); }
-
-  .meta-toggle-icon {
-    display: inline-block;
-    font-size: 0.7rem;
-    transition: transform 0.2s ease;
-  }
-  #panel-record.meta-collapsed .meta-toggle-icon {
-    transform: rotate(-90deg);
-  }
-
-  /* Mobile status in toggle bar */
-  .mobile-rec-status {
+  .toolbar-status {
     display: flex;
     align-items: center;
     gap: 6px;
     font-family: var(--font-mono);
     font-size: 0.65rem;
-    color: var(--clr-sidebar-text);
+    color: var(--clr-ink-muted);
   }
-  .mobile-rec-status .status-dot {
-    width: 6px; height: 6px;
+
+  .toolbar-timer {
+    font-variant-numeric: tabular-nums;
+    margin-left: 4px;
+  }
+
+  .toolbar-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: transparent;
+    border: 1px solid var(--clr-rule);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    color: var(--clr-ink-muted);
+    cursor: pointer;
+    padding: 3px 8px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .toolbar-toggle-btn:active { background: var(--clr-rule-soft); }
+
+  #toolbarToggleIcon {
+    display: inline-block;
+    font-size: 0.65rem;
+    transition: transform 0.25s ease;
+  }
+  #panel-record.toolbar-open #toolbarToggleIcon {
+    transform: rotate(180deg);
+  }
+
+  /* ── Toolbar drawer: collapsed by default on mobile ── */
+  .toolbar-drawer {
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height 0.3s ease;
+  }
+  #panel-record.toolbar-open .toolbar-drawer {
+    max-height: 600px;
   }
 
   /* ── Waveform: smaller on mobile ── */
@@ -386,17 +388,11 @@
     height: 32px;
   }
 
-  /* ── Session meta: collapsible ── */
+  /* ── Session meta ── */
   .session-meta-strip {
     padding: var(--sp-2) var(--sp-3);
     flex-wrap: wrap;
     gap: var(--sp-2) var(--sp-3);
-    max-height: 160px;
-  }
-  #panel-record.meta-collapsed .session-meta-strip {
-    max-height: 0;
-    padding-top: 0;
-    padding-bottom: 0;
   }
   .meta-field {
     flex: none;

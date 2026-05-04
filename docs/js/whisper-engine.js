@@ -128,7 +128,7 @@ const WhisperEngine = (() => {
         if (!active) { clearInterval(ampTimer); ampTimer = null; return; }
         analyser.getByteFrequencyData(data);
         const avg = data.reduce((a, v) => a + v, 0) / data.length / 255;
-        cb.onAmplitude(Math.min(1, avg * 3.5));
+        cb.onAmplitude(Math.min(1, avg * 6));
       }, 60);
     } catch (_) {
       ampTimer = setInterval(() => {

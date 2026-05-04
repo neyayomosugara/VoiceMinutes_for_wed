@@ -16,6 +16,7 @@
 
   <!-- External libs (CDN) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <!-- docx 7.8.2: last UMD/global version that works with <script> tag. v8+ is ESM-only. -->
   <script src="https://unpkg.com/docx@7.8.2/build/index.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -102,68 +103,73 @@
           </div>
         </div>
 
-        <!-- Notification area for banners (Whisper info, browser warnings) -->
+        <!-- Notification area for banners (always visible) -->
         <div id="notificationArea"></div>
 
-        <!-- Waveform visualizer -->
-        <div class="waveform-container">
-          <canvas id="waveCanvas" class="waveform-canvas"></canvas>
-          <div class="waveform-overlay">
-            <span class="waveform-label" id="waveLabel">AUDIO INPUT / ja-JP</span>
-            <span class="waveform-level" id="waveLevel">— dB</span>
-          </div>
-        </div>
-
-        <!-- Mobile-only: meta toggle bar -->
-        <div class="meta-toggle-bar">
-          <button class="meta-toggle-btn" onclick="App.toggleMeta()" aria-label="会議情報を表示/非表示">
-            <span class="meta-toggle-icon" id="metaToggleIcon">▾</span>
-            <span>会議情報</span>
-          </button>
-          <div class="mobile-rec-status">
+        <!-- Mobile-only: toolbar toggle row (always visible, shows status + arrow) -->
+        <div class="toolbar-toggle-row">
+          <div class="toolbar-status">
             <span class="status-dot" id="mobileStatusDot"></span>
             <span id="mobileStatusText">待機中</span>
-            <span id="mobileTimer">00:00</span>
+            <span id="mobileTimer" class="toolbar-timer">00:00</span>
           </div>
+          <button class="toolbar-toggle-btn" onclick="App.toggleToolbar()" aria-label="ツールバーを表示/非表示">
+            <span id="toolbarToggleIcon">▲</span>
+            <span>詳細</span>
+          </button>
         </div>
 
-        <!-- Session metadata (editable) -->
-        <div class="session-meta-strip">
-          <div class="meta-field">
-            <label class="meta-label">会議名</label>
-            <input class="meta-input" id="sessionTitle" placeholder="例：週次定例MTG" value="無題の会議">
-          </div>
-          <div class="meta-field">
-            <label class="meta-label">参加者</label>
-            <input class="meta-input" id="attendees" placeholder="例：田中部長, 佐藤さん, 鈴木主任">
-          </div>
-          <div class="meta-field">
-            <label class="meta-label">場所 / 形式</label>
-            <input class="meta-input" id="location" placeholder="例：第2会議室 / Zoom">
-          </div>
-        </div>
+        <!-- Collapsible toolbar drawer (hidden by default on mobile) -->
+        <div class="toolbar-drawer">
 
-        <!-- Stats bar -->
-        <div class="stats-bar">
-          <div class="stat-item">
-            <span class="stat-val" id="charCount">0</span>
-            <span class="stat-lbl">文字</span>
+          <!-- Waveform visualizer -->
+          <div class="waveform-container">
+            <canvas id="waveCanvas" class="waveform-canvas"></canvas>
+            <div class="waveform-overlay">
+              <span class="waveform-label" id="waveLabel">AUDIO INPUT / ja-JP</span>
+              <span class="waveform-level" id="waveLevel">— dB</span>
+            </div>
           </div>
-          <div class="stat-divider"></div>
-          <div class="stat-item">
-            <span class="stat-val" id="uttCount">0</span>
-            <span class="stat-lbl">発言</span>
+
+          <!-- Session metadata (editable) -->
+          <div class="session-meta-strip">
+            <div class="meta-field">
+              <label class="meta-label">会議名</label>
+              <input class="meta-input" id="sessionTitle" placeholder="例：週次定例MTG" value="無題の会議">
+            </div>
+            <div class="meta-field">
+              <label class="meta-label">参加者</label>
+              <input class="meta-input" id="attendees" placeholder="例：田中部長, 佐藤さん, 鈴木主任">
+            </div>
+            <div class="meta-field">
+              <label class="meta-label">場所 / 形式</label>
+              <input class="meta-input" id="location" placeholder="例：第2会議室 / Zoom">
+            </div>
           </div>
-          <div class="stat-divider"></div>
-          <div class="stat-item">
-            <span class="stat-val" id="wordCount">0</span>
-            <span class="stat-lbl">単語</span>
+
+          <!-- Stats bar -->
+          <div class="stats-bar">
+            <div class="stat-item">
+              <span class="stat-val" id="charCount">0</span>
+              <span class="stat-lbl">文字</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <span class="stat-val" id="uttCount">0</span>
+              <span class="stat-lbl">発言</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <span class="stat-val" id="wordCount">0</span>
+              <span class="stat-lbl">単語</span>
+            </div>
+            <div class="stat-spacer"></div>
+            <div class="search-wrap">
+              <input class="search-input" id="searchInput" placeholder="🔍  テキスト内検索..." oninput="App.filterTranscript(this.value)">
+            </div>
           </div>
-          <div class="stat-spacer"></div>
-          <div class="search-wrap">
-            <input class="search-input" id="searchInput" placeholder="🔍  テキスト内検索..." oninput="App.filterTranscript(this.value)">
-          </div>
-        </div>
+
+        </div><!-- /.toolbar-drawer -->
 
         <!-- Transcript area -->
         <div class="transcript-wrap">
@@ -309,7 +315,7 @@
             <div class="export-card-body">
               <h3>印刷プレビュー</h3>
               <p>ブラウザの印刷ダイアログを開きます。A4縦・余白付きで最適化。</p>
-              <button class="btn btn-export btn-print" onclick="window.print()">
+              <button class="btn btn-export btn-print" onclick="App.printMinutes()">
                 <span>印刷する</span>
               </button>
             </div>

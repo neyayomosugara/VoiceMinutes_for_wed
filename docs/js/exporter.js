@@ -56,267 +56,86 @@ const Exporter = (() => {
   }
 
   /* ════════════════════════════════════════
-     PDF EXPORT — jsPDF
+     PDF EXPORT — html2canvas → jsPDF
+     Uses the rendered DOM so Japanese fonts
+     (Noto Serif JP via Google Fonts) are
+     already rasterised — no garbling.
   ════════════════════════════════════════ */
   async function toPDF() {
     const data = getMinutesData();
     if (!data) return;
-    if (!checkLib('jsPDF')) return;
 
-    const opts = getOpts();
+    const minutesPaper = document.getElementById('minutesPaper');
+    if (!minutesPaper || !minutesPaper.innerHTML.trim()) {
+      Toast.show('まず議事録を生成してください', 'error');
+      return;
+    }
+    if (!checkLib('jsPDF')) return;
+    if (typeof html2canvas === 'undefined') {
+      Toast.show('html2canvas が読み込まれていません。リロードしてください。', 'error');
+      return;
+    }
+
     Toast.show('PDFを生成中...', 'info');
 
     try {
+      /* Temporarily make minutes paper fully visible for capture */
+      const prevDisplay = minutesPaper.style.display;
+      minutesPaper.style.display = 'block';
+
+      const canvas = await html2canvas(minutesPaper, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#f8f6f1',
+        logging: false,
+        scrollX: 0,
+        scrollY: -window.scrollY,
+      });
+
+      minutesPaper.style.display = prevDisplay;
+
       const { jsPDF } = window.jspdf;
-      const doc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-        putOnlyUsedFonts: true,
-      });
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-      const W = doc.internal.pageSize.getWidth();
-      const H = doc.internal.pageSize.getHeight();
-      const ml = 20, mr = 20, mt = 24, mb = 20;
-      const contentW = W - ml - mr;
+      const margin  = 12;
+      const pageW   = pdf.internal.pageSize.getWidth();
+      const pageH   = pdf.internal.pageSize.getHeight();
+      const usableW = pageW - margin * 2;
+      const usableH = pageH - margin * 2;
 
-      let y = mt;
+      /* Scale: canvas pixels → mm at usable width */
+      const mmPerPx  = usableW / canvas.width;
+      const totalMmH = canvas.height * mmPerPx;
 
-      const COLOR = {
-        ink:        [28, 26, 23],
-        inkSoft:    [61, 58, 53],
-        inkMuted:   [112, 109, 101],
-        inkFaint:   [168, 164, 155],
-        accent:     [181, 57, 30],
-        decision:   [23, 74, 53],
-        decisionBg: [227, 238, 234],
-        todoBg:     [245, 236, 226],
-        todo:       [122, 56, 0],
-        topicBg:    [228, 234, 245],
-        topic:      [29, 52, 97],
-        rule:       [221, 217, 206],
-        paper:      [248, 246, 241],
-      };
+      let placed = 0;
+      let first  = true;
 
-      const setFont = (size, style = 'normal', color = COLOR.ink) => {
-        doc.setFontSize(size);
-        doc.setTextColor(...color);
-        doc.setFont('helvetica', style);
-      };
+      while (placed < totalMmH) {
+        if (!first) pdf.addPage();
+        first = false;
 
-      const hRule = (yPos, weight = 0.2, color = COLOR.rule) => {
-        doc.setDrawColor(...color);
-        doc.setLineWidth(weight);
-        doc.line(ml, yPos, W - mr, yPos);
-        return yPos;
-      };
+        const sliceMmH = Math.min(usableH, totalMmH - placed);
+        const slicePx  = Math.round(sliceMmH / mmPerPx);
+        const srcYPx   = Math.round(placed / mmPerPx);
 
-      const checkPage = (needed = 10) => {
-        if (y + needed > H - mb - 10) {
-          doc.addPage();
-          y = mt;
-          if (opts.includeHeader) drawPageHeader();
-        }
-      };
+        /* Extract page slice from full canvas */
+        const slice    = document.createElement('canvas');
+        slice.width    = canvas.width;
+        slice.height   = slicePx;
+        slice.getContext('2d').drawImage(
+          canvas, 0, srcYPx, canvas.width, slicePx,
+          0, 0, canvas.width, slicePx
+        );
 
-      const drawPageHeader = () => {
-        doc.setFillColor(...COLOR.accent);
-        doc.rect(0, 0, W, 1.5, 'F');
-        if (opts.includeHeader) {
-          setFont(7, 'normal', COLOR.inkFaint);
-          doc.text(data.title.slice(0, 60), ml, 6);
-          doc.text(fmtDate(), W - mr, 6, { align: 'right' });
-          if (getOrgName()) doc.text(getOrgName(), W / 2, 6, { align: 'center' });
-          hRule(9, 0.15, COLOR.rule);
-          y = Math.max(y, 13);
-        }
-      };
-
-      /* Title page */
-      doc.setFillColor(...COLOR.accent);
-      doc.rect(0, 0, W, 2, 'F');
-
-      setFont(7.5, 'normal', COLOR.inkFaint);
-      doc.text('MEETING MINUTES / 議事録', ml, mt);
-      y = mt + 7;
-
-      setFont(20, 'bold', COLOR.ink);
-      const titleLines = doc.splitTextToSize(data.title, contentW);
-      titleLines.forEach(line => { doc.text(line, ml, y); y += 8; });
-      y += 1;
-
-      doc.setFillColor(...COLOR.accent);
-      doc.rect(ml, y, 20, 0.6, 'F');
-      y += 5;
-
-      const metaRows = [
-        ['日時',   data.datetime + (data.duration && data.duration !== '00:00' ? ` （所要時間 ${data.duration}）` : '')],
-        data.location  ? ['場所',   data.location]  : null,
-        data.attendees ? ['出席者', data.attendees] : null,
-        getAuthor()    ? ['作成者', getAuthor()]    : null,
-      ].filter(Boolean);
-
-      metaRows.forEach(([label, val]) => {
-        checkPage(8);
-        setFont(7.5, 'bold', COLOR.inkFaint);
-        doc.text(label, ml, y);
-        setFont(8.5, 'normal', COLOR.inkSoft);
-        const valLines = doc.splitTextToSize(val, contentW - 28);
-        valLines.forEach((line, li) => doc.text(line, ml + 28, y + li * 4.5));
-        y += valLines.length * 4.5 + 1.5;
-      });
-      y += 3;
-      hRule(y, 0.5, COLOR.ink);
-      y += 6;
-
-      const renderSection = (numStr, title, content) => {
-        checkPage(18);
-        setFont(7.5, 'normal', COLOR.inkFaint);
-        doc.text(numStr, ml, y);
-        setFont(11, 'bold', COLOR.ink);
-        doc.text(title, ml + 10, y);
-        y += 2;
-        hRule(y, 0.3, COLOR.rule);
-        y += 5;
-        content();
-        y += 4;
-      };
-
-      const bulletText = (text, color = COLOR.inkSoft, bgColor = null) => {
-        checkPage(8);
-        if (bgColor) {
-          const lines = doc.splitTextToSize(text, contentW - 14);
-          const bH = lines.length * 5.2 + 3;
-          doc.setFillColor(...bgColor);
-          doc.rect(ml, y - 4, contentW, bH, 'F');
-        }
-        doc.setFillColor(...color);
-        doc.circle(ml + 2, y - 1, 0.8, 'F');
-        setFont(9, 'normal', color);
-        const lines = doc.splitTextToSize(text, contentW - 8);
-        lines.forEach((line, li) => {
-          if (li > 0) checkPage(6);
-          doc.text(line, ml + 6, y + li * 5.2);
-        });
-        y += lines.length * 5.2 + 1;
-      };
-
-      let sectionNum = 1;
-      const roman = ['I','II','III','IV','V','VI','VII','VIII'];
-
-      if (data.topics.length > 0) {
-        renderSection(roman[sectionNum - 1] + '.', '議題', () => {
-          data.topics.forEach(t => {
-            checkPage(8);
-            doc.setFillColor(...COLOR.topicBg);
-            const tw = doc.getStringUnitWidth(t) * 9 / doc.internal.scaleFactor + 6;
-            doc.rect(ml, y - 4, Math.min(tw, contentW), 7, 'F');
-            setFont(9, 'normal', COLOR.topic);
-            doc.text(t.slice(0, 45), ml + 3, y);
-            y += 9;
-          });
-        });
-        sectionNum++;
+        pdf.addImage(
+          slice.toDataURL('image/jpeg', 0.95), 'JPEG',
+          margin, margin, usableW, sliceMmH
+        );
+        placed += sliceMmH;
       }
 
-      renderSection(roman[sectionNum - 1] + '.', '決定事項', () => {
-        if (data.decisions.length === 0) {
-          setFont(8.5, 'italic', COLOR.inkFaint);
-          doc.text('明示的な決定事項は検出されませんでした。', ml + 6, y);
-          y += 7;
-        } else {
-          data.decisions.forEach(d => bulletText(d, COLOR.decision, COLOR.decisionBg));
-        }
-      });
-      sectionNum++;
-
-      renderSection(roman[sectionNum - 1] + '.', 'アクションアイテム', () => {
-        if (data.todos.length === 0) {
-          setFont(8.5, 'italic', COLOR.inkFaint);
-          doc.text('アクションアイテムは検出されませんでした。', ml + 6, y);
-          y += 7;
-        } else {
-          const col = [contentW * 0.55, contentW * 0.22, contentW * 0.23];
-          const colX = [ml, ml + col[0], ml + col[0] + col[1]];
-          doc.setFillColor(...COLOR.ink);
-          doc.rect(ml, y - 4, contentW, 6, 'F');
-          setFont(7, 'bold', [255, 255, 255]);
-          doc.text('タスク', colX[0] + 2, y);
-          doc.text('担当者', colX[1] + 2, y);
-          doc.text('期限',   colX[2] + 2, y);
-          y += 4;
-
-          data.todos.forEach((t, i) => {
-            checkPage(10);
-            if (i % 2 === 0) {
-              doc.setFillColor(...COLOR.paper);
-              doc.rect(ml, y - 4, contentW, 8, 'F');
-            }
-            setFont(8.5, 'bold', COLOR.ink);
-            const taskLines = doc.splitTextToSize(t.text, col[0] - 4);
-            doc.text(taskLines[0], colX[0] + 2, y);
-            setFont(8, 'normal', t.person ? COLOR.topic : COLOR.inkFaint);
-            doc.text(t.person || '未定', colX[1] + 2, y);
-            setFont(8, 'normal', t.deadline ? COLOR.accent : COLOR.inkFaint);
-            doc.text(t.deadline || '未定', colX[2] + 2, y);
-            hRule(y + 3, 0.15, COLOR.rule);
-            y += 9;
-          });
-        }
-      });
-      sectionNum++;
-
-      if (data.keyPoints.length > 0) {
-        renderSection(roman[sectionNum - 1] + '.', '主な議論', () => {
-          data.keyPoints.forEach(p => bulletText(p));
-        });
-        sectionNum++;
-      }
-
-      if (data.nextMeeting) {
-        renderSection(roman[sectionNum - 1] + '.', '次回予定', () => {
-          bulletText(data.nextMeeting);
-        });
-        sectionNum++;
-      }
-
-      if (opts.includeTranscript) {
-        doc.addPage();
-        y = mt;
-        drawPageHeader();
-        setFont(12, 'bold', COLOR.ink);
-        doc.text('付録：文字起こし全文', ml, y);
-        y += 8;
-        hRule(y, 0.4, COLOR.ink);
-        y += 6;
-
-        getUtterances().forEach((u, i) => {
-          checkPage(12);
-          setFont(7.5, 'normal', COLOR.inkFaint);
-          doc.text(String(i + 1).padStart(3, '0'), ml, y);
-          setFont(8.5, 'normal', COLOR.inkSoft);
-          const lines = doc.splitTextToSize(u.text, contentW - 12);
-          lines.forEach((line, li) => {
-            if (li > 0) checkPage(6);
-            doc.text(line, ml + 10, y + li * 5);
-          });
-          y += lines.length * 5 + 2;
-          hRule(y, 0.1, COLOR.rule);
-          y += 3;
-        });
-      }
-
-      const totalPages = doc.internal.getNumberOfPages();
-      for (let p = 1; p <= totalPages; p++) {
-        doc.setPage(p);
-        setFont(7, 'normal', COLOR.inkFaint);
-        doc.text(`${p} / ${totalPages}`, W / 2, H - 8, { align: 'center' });
-        if (getOrgName() && opts.includeHeader) {
-          doc.text(getOrgName(), ml, H - 8);
-        }
-      }
-
-      doc.save(`minutes_${timestamp()}.pdf`);
+      pdf.save(`minutes_${timestamp()}.pdf`);
       Toast.show('PDFを保存しました ✓', 'success');
 
     } catch (err) {

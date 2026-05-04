@@ -337,6 +337,7 @@
   .sidebar, .mobile-nav,
   .panel-header, .record-controls,
   .stats-bar, .waveform-container,
+  .toolbar-toggle-row, .toolbar-drawer,
   .session-meta-strip { display: none !important; }
 
   body { overflow: auto; height: auto; }
@@ -346,4 +347,14 @@
   #panel-record { display: none !important; }
   #panel-minutes { display: flex !important; }
   .minutes-container { max-height: none !important; overflow: visible; }
+
+  /* Ensure Japanese fonts render correctly when printing */
+  #minutesPaper, #minutesPaper * {
+    font-family: 'Noto Serif JP', 'Noto Sans JP', 'Hiragino Kaku Gothic ProN',
+                 'Hiragino Sans', 'Meiryo', 'MS PGothic', sans-serif;
+  }
+  #minutesPaper .doc-title,
+  #minutesPaper .doc-section-title {
+    font-family: 'Noto Serif JP', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+  }
 }

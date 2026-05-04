@@ -71,7 +71,7 @@ const Speech = (() => {
       const data = new Uint8Array(analyser.frequencyBinCount);
       ampTimer = setInterval(() => {
         analyser.getByteFrequencyData(data);
-        cb.onAmplitude(Math.min(1, data.reduce((a, v) => a + v, 0) / data.length / 255 * 3.5));
+        cb.onAmplitude(Math.min(1, data.reduce((a, v) => a + v, 0) / data.length / 255 * 6));
       }, 60);
     } catch (_) {
       ampTimer = setInterval(() => {
