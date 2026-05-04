@@ -265,13 +265,18 @@ const App = (() => {
 
     /* Edit callback */
     Renderer.setEditCallback((index, newText) => {
-      if (state.utterances[index]) {
-        state.utterances[index].text = newText;
+      if (state.utterances[index] !== undefined) {
+        if (newText === '') {
+          state.utterances.splice(index, 1);
+        } else {
+          state.utterances[index].text = newText;
+        }
         Renderer.renderTranscript(
           state.utterances, state.searchQuery,
           document.getElementById('highlightKw')?.checked ?? true
         );
         updateStats();
+        document.getElementById('generateBtn').disabled = state.utterances.length === 0;
       }
     });
   }
@@ -344,8 +349,11 @@ const App = (() => {
       const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
       const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
       const s = String(elapsed % 60).padStart(2, '0');
-      const el = document.getElementById('timerDisplay');
-      if (el) el.textContent = `${m}:${s}`;
+      const time = `${m}:${s}`;
+      const el  = document.getElementById('timerDisplay');
+      const mel = document.getElementById('mobileTimer');
+      if (el)  el.textContent  = time;
+      if (mel) mel.textContent = time;
     }, 500);
   }
 
@@ -359,15 +367,18 @@ const App = (() => {
     return el ? el.textContent : '00:00';
   }
 
-  /* ── Status ── */
+  /* ── Status (sidebar + mobile toggle bar) ── */
   function setStatus(type, text) {
+    const cls = type === 'live' ? ' live' : type === 'processing' ? ' processing' : '';
     const dot = document.getElementById('statusDot');
     const txt = document.getElementById('statusText');
-    if (dot) dot.className = `status-dot${
-      type === 'live' ? ' live' :
-      type === 'processing' ? ' processing' : ''
-    }`;
+    if (dot) dot.className = `status-dot${cls}`;
     if (txt) txt.textContent = text;
+    /* Sync mobile status in meta toggle bar */
+    const mDot = document.getElementById('mobileStatusDot');
+    const mTxt = document.getElementById('mobileStatusText');
+    if (mDot) mDot.className = `status-dot${cls}`;
+    if (mTxt) mTxt.textContent = text;
   }
 
   /* ── Stats ── */
@@ -450,8 +461,10 @@ const App = (() => {
     Renderer.renderTranscript([], '', false);
     updateStats();
 
-    const timer = document.getElementById('timerDisplay');
-    if (timer) timer.textContent = '00:00';
+    const timer  = document.getElementById('timerDisplay');
+    const mTimer = document.getElementById('mobileTimer');
+    if (timer)  timer.textContent  = '00:00';
+    if (mTimer) mTimer.textContent = '00:00';
 
     const empty = document.getElementById('minutesEmpty');
     const paper = document.getElementById('minutesPaper');
@@ -536,7 +549,7 @@ const App = (() => {
   /* ── Public API ── */
   return {
     init, toggleRecording, generateMinutes,
-    filterTranscript, setMode, setLanguage, clearAll,
+    filterTranscript, setMode, setLanguage, clearAll, toggleMeta,
     get isRecording() { return state.isRecording; },
   };
 
