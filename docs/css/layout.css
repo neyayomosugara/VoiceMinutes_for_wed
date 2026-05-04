@@ -23,7 +23,61 @@
   border-right: 1px solid rgba(255,255,255,0.05);
   overflow: hidden;
   position: relative;
+  transition: width 0.25s ease;
 }
+
+/* ── Sidebar collapse / expand buttons ── */
+.sidebar-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: var(--sp-3) 0;
+  background: transparent;
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  color: var(--clr-sidebar-text);
+  font-size: 0.65rem;
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity var(--transition-fast), background var(--transition-fast);
+  flex-shrink: 0;
+}
+.sidebar-collapse-btn:hover { opacity: 1; background: var(--clr-sidebar-hover); }
+
+.sidebar-expander-btn {
+  display: none;
+  position: fixed;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 18px; height: 52px;
+  background: var(--clr-sidebar);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  color: var(--clr-sidebar-text);
+  font-size: 0.6rem;
+  cursor: pointer;
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity var(--transition-fast);
+}
+.sidebar-expander-btn:hover { opacity: 1; }
+
+/* Collapsed state */
+.app.sidebar-collapsed .sidebar { width: 0; min-width: 0; }
+.app.sidebar-collapsed .sidebar-expander-btn { display: flex; }
+
+/* Mobile: hide desktop sidebar controls */
+@media (max-width: 640px) {
+  .sidebar-collapse-btn,
+  .sidebar-expander-btn { display: none !important; }
+}
+
+/* ── Mobile nav toggle tab ── */
+.mobile-nav-toggle-btn { display: none; }
 
 .sidebar::before {
   content: '';
@@ -313,11 +367,53 @@
 /* ── Mobile (≤ 640px) ── */
 @media (max-width: 640px) {
   .sidebar { display: none; }
-  .mobile-nav { display: flex; }
+  .mobile-nav {
+    display: flex;
+    transition: transform 0.25s ease;
+  }
 
   /* Account for mobile nav height + safe area */
   .main-content {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    transition: padding-bottom 0.25s ease;
+  }
+
+  /* Mobile nav toggle tab */
+  .mobile-nav-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    width: 48px; height: 16px;
+    background: var(--clr-sidebar);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    color: rgba(255,255,255,0.5);
+    font-size: 0.5rem;
+    cursor: pointer;
+    z-index: 201;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: bottom 0.25s ease;
+  }
+
+  /* Hidden state */
+  .mobile-nav.nav-hidden {
+    transform: translateY(100%);
+  }
+  body.nav-hidden .mobile-nav-toggle-btn {
+    bottom: env(safe-area-inset-bottom, 4px);
+  }
+  body.nav-hidden .main-content {
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+  /* Also account for record-controls safe area when nav is hidden */
+  body.nav-hidden .record-controls {
+    padding-bottom: var(--sp-2);
   }
 
   .panel-header {

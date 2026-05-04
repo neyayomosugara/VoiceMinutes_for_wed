@@ -67,6 +67,8 @@ const App = (() => {
     checkBrowserSupport();
     initDateTime();
     initToolbarToggle();
+    initSidebar();
+    initMobileNav();
 
     /* Welcome modal */
     try {
@@ -108,6 +110,52 @@ const App = (() => {
   function updateToolbarIcon(open) {
     const icon = document.getElementById('toolbarToggleIcon');
     if (icon) icon.textContent = open ? '▼' : '▲';
+  }
+
+  /* ── Sidebar collapse (desktop) ── */
+  function initSidebar() {
+    if (window.innerWidth <= 640) return;
+    try {
+      const collapsed = localStorage.getItem('minutes_sidebar_collapsed') === '1';
+      if (collapsed) {
+        document.getElementById('app')?.classList.add('sidebar-collapsed');
+        const icon = document.getElementById('sidebarCollapseIcon');
+        if (icon) icon.textContent = '▶';
+      }
+    } catch (_) {}
+  }
+
+  function toggleSidebar() {
+    const app = document.getElementById('app');
+    if (!app) return;
+    const collapsed = app.classList.toggle('sidebar-collapsed');
+    const icon = document.getElementById('sidebarCollapseIcon');
+    if (icon) icon.textContent = collapsed ? '▶' : '◀';
+    try { localStorage.setItem('minutes_sidebar_collapsed', collapsed ? '1' : '0'); } catch (_) {}
+  }
+
+  /* ── Mobile nav toggle ── */
+  function initMobileNav() {
+    if (window.innerWidth > 640) return;
+    try {
+      const hidden = localStorage.getItem('minutes_nav_hidden') === '1';
+      if (hidden) {
+        document.querySelector('.mobile-nav')?.classList.add('nav-hidden');
+        document.body.classList.add('nav-hidden');
+        const icon = document.getElementById('mobileNavToggleIcon');
+        if (icon) icon.textContent = '▲';
+      }
+    } catch (_) {}
+  }
+
+  function toggleMobileNav() {
+    const nav  = document.querySelector('.mobile-nav');
+    const icon = document.getElementById('mobileNavToggleIcon');
+    if (!nav) return;
+    const hidden = nav.classList.toggle('nav-hidden');
+    document.body.classList.toggle('nav-hidden', hidden);
+    if (icon) icon.textContent = hidden ? '▲' : '▼';
+    try { localStorage.setItem('minutes_nav_hidden', hidden ? '1' : '0'); } catch (_) {}
   }
 
   /* ── Browser support check ── */
@@ -563,6 +611,7 @@ const App = (() => {
     init, toggleRecording, generateMinutes,
     filterTranscript, setMode, setLanguage, clearAll,
     toggleToolbar, printMinutes,
+    toggleSidebar, toggleMobileNav,
     get isRecording() { return state.isRecording; },
   };
 

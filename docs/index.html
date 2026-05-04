@@ -86,7 +86,15 @@
         </div>
         <div class="timer-display" id="timerDisplay">00:00</div>
       </div>
+
+      <!-- Collapse arrow (inside sidebar) -->
+      <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" onclick="App.toggleSidebar()" title="メニューを閉じる">
+        <span id="sidebarCollapseIcon">◀</span>
+      </button>
     </aside>
+
+    <!-- Expand arrow (visible only when sidebar is collapsed) -->
+    <button class="sidebar-expander-btn" id="sidebarExpanderBtn" onclick="App.toggleSidebar()" title="メニューを開く">▶</button>
 
     <!-- Main content area -->
     <main class="main-content">
@@ -412,6 +420,11 @@
     </main>
   </div>
 
+
+  <!-- ── Mobile Nav Toggle Tab (always visible on mobile) ── -->
+  <button class="mobile-nav-toggle-btn" id="mobileNavToggleBtn" onclick="App.toggleMobileNav()" aria-label="ナビゲーションを折りたたむ">
+    <span id="mobileNavToggleIcon">▼</span>
+  </button>
 
   <!-- ── Mobile Bottom Navigation ── -->
   <nav class="mobile-nav" aria-label="モバイルナビゲーション">
