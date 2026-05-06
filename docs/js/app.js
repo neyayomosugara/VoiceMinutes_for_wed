@@ -479,8 +479,7 @@ const App = (() => {
       Toast.show('まず議事録を生成してください', 'error');
       return;
     }
-    switchPanel('minutes');
-    setTimeout(() => window.print(), 150);
+    Exporter.toPrint();
   }
 
   /* ── Filter transcript ── */

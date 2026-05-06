@@ -56,91 +56,120 @@ const Exporter = (() => {
   }
 
   /* ════════════════════════════════════════
-     PDF EXPORT — html2canvas → jsPDF
-     Uses the rendered DOM so Japanese fonts
-     (Noto Serif JP via Google Fonts) are
-     already rasterised — no garbling.
+     PDF CORE — html2canvas → jsPDF
+     Shared by toPDF() and toPrint().
+     Returns a jsPDF instance, or null on error.
   ════════════════════════════════════════ */
-  async function toPDF() {
-    const data = getMinutesData();
-    if (!data) return;
-
+  async function buildPDFDoc() {
     const minutesPaper = document.getElementById('minutesPaper');
     if (!minutesPaper || !minutesPaper.innerHTML.trim()) {
       Toast.show('まず議事録を生成してください', 'error');
-      return;
+      return null;
     }
-    if (!checkLib('jsPDF')) return;
+    if (!checkLib('jsPDF')) return null;
     if (typeof html2canvas === 'undefined') {
       Toast.show('html2canvas が読み込まれていません。リロードしてください。', 'error');
-      return;
+      return null;
     }
 
+    /* Temporarily ensure element is fully rendered */
+    const prevDisplay = minutesPaper.style.display;
+    minutesPaper.style.display = 'block';
+
+    const canvas = await html2canvas(minutesPaper, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#f8f6f1',
+      logging: false,
+      scrollX: 0,
+      scrollY: -window.scrollY,
+    });
+
+    minutesPaper.style.display = prevDisplay;
+
+    const { jsPDF } = window.jspdf;
+    const pdf     = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const margin  = 12;
+    const usableW = pdf.internal.pageSize.getWidth()  - margin * 2;
+    const usableH = pdf.internal.pageSize.getHeight() - margin * 2;
+    const mmPerPx = usableW / canvas.width;
+    const totalH  = canvas.height * mmPerPx;
+
+    let placed = 0, first = true;
+    while (placed < totalH) {
+      if (!first) pdf.addPage();
+      first = false;
+
+      const sliceH  = Math.min(usableH, totalH - placed);
+      const slicePx = Math.round(sliceH / mmPerPx);
+      const srcY    = Math.round(placed / mmPerPx);
+
+      const slice = document.createElement('canvas');
+      slice.width  = canvas.width;
+      slice.height = slicePx;
+      slice.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, slicePx, 0, 0, canvas.width, slicePx);
+
+      pdf.addImage(slice.toDataURL('image/jpeg', 0.95), 'JPEG', margin, margin, usableW, sliceH);
+      placed += sliceH;
+    }
+
+    return pdf;
+  }
+
+  /* ════════════════════════════════════════
+     PDF DOWNLOAD
+  ════════════════════════════════════════ */
+  async function toPDF() {
+    if (!getMinutesData()) return;
     Toast.show('PDFを生成中...', 'info');
-
     try {
-      /* Temporarily make minutes paper fully visible for capture */
-      const prevDisplay = minutesPaper.style.display;
-      minutesPaper.style.display = 'block';
-
-      const canvas = await html2canvas(minutesPaper, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#f8f6f1',
-        logging: false,
-        scrollX: 0,
-        scrollY: -window.scrollY,
-      });
-
-      minutesPaper.style.display = prevDisplay;
-
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-      const margin  = 12;
-      const pageW   = pdf.internal.pageSize.getWidth();
-      const pageH   = pdf.internal.pageSize.getHeight();
-      const usableW = pageW - margin * 2;
-      const usableH = pageH - margin * 2;
-
-      /* Scale: canvas pixels → mm at usable width */
-      const mmPerPx  = usableW / canvas.width;
-      const totalMmH = canvas.height * mmPerPx;
-
-      let placed = 0;
-      let first  = true;
-
-      while (placed < totalMmH) {
-        if (!first) pdf.addPage();
-        first = false;
-
-        const sliceMmH = Math.min(usableH, totalMmH - placed);
-        const slicePx  = Math.round(sliceMmH / mmPerPx);
-        const srcYPx   = Math.round(placed / mmPerPx);
-
-        /* Extract page slice from full canvas */
-        const slice    = document.createElement('canvas');
-        slice.width    = canvas.width;
-        slice.height   = slicePx;
-        slice.getContext('2d').drawImage(
-          canvas, 0, srcYPx, canvas.width, slicePx,
-          0, 0, canvas.width, slicePx
-        );
-
-        pdf.addImage(
-          slice.toDataURL('image/jpeg', 0.95), 'JPEG',
-          margin, margin, usableW, sliceMmH
-        );
-        placed += sliceMmH;
-      }
-
+      const pdf = await buildPDFDoc();
+      if (!pdf) return;
       pdf.save(`minutes_${timestamp()}.pdf`);
       Toast.show('PDFを保存しました ✓', 'success');
-
     } catch (err) {
       console.error('PDF error:', err);
       Toast.show('PDF生成に失敗しました: ' + err.message, 'error');
+    }
+  }
+
+  /* ════════════════════════════════════════
+     PDF PRINT — open as blob URL → print dialog
+  ════════════════════════════════════════ */
+  async function toPrint() {
+    if (!getMinutesData()) return;
+    Toast.show('印刷用PDFを準備中...', 'info');
+    try {
+      const pdf = await buildPDFDoc();
+      if (!pdf) return;
+
+      const blob = pdf.output('blob');
+      const url  = URL.createObjectURL(blob);
+      const win  = window.open(url, '_blank');
+
+      if (win) {
+        /* Wait for the PDF viewer to load, then trigger print */
+        win.addEventListener('load', () => {
+          setTimeout(() => {
+            win.print();
+            setTimeout(() => URL.revokeObjectURL(url), 15000);
+          }, 600);
+        });
+        /* Fallback if load event doesn't fire (some PDF viewers) */
+        setTimeout(() => {
+          try { win.print(); } catch (_) {}
+          setTimeout(() => URL.revokeObjectURL(url), 15000);
+        }, 2000);
+      } else {
+        /* Popup blocked — save as file instead */
+        Toast.show('ポップアップがブロックされました。PDFとして保存します。', 'info');
+        pdf.save(`minutes_${timestamp()}.pdf`);
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      console.error('Print error:', err);
+      Toast.show('印刷の準備に失敗しました: ' + err.message, 'error');
     }
   }
 
@@ -496,6 +525,6 @@ const Exporter = (() => {
     }
   }
 
-  return { toPDF, toWord, toMarkdown, toText, toJSON };
+  return { toPDF, toPrint, toWord, toMarkdown, toText, toJSON };
 
 })();
